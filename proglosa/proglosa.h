@@ -42,9 +42,9 @@
 
 /*****************************************************************************/
 
-#define note(...) printf("[note] " __VA_ARGS__)
-#define warn(...) printf("[warn] " __VA_ARGS__)
-#define err(...)  printf("[err] " __VA_ARGS__)
+#define print_comment(...) printf("[comment] " __VA_ARGS__)
+#define print_caution(...) printf("[caution] " __VA_ARGS__)
+#define print_failure(...) printf("[failure] " __VA_ARGS__)
 
 /*****************************************************************************/
 

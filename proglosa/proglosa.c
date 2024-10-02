@@ -247,7 +247,10 @@ handle open_file(const char *file_path)
   OFSTRUCT of;
   HFILE file_handle = OpenFile(file_path, &of, OF_READWRITE);
   if (file_handle == HFILE_ERROR)
+  {
+    print_failure("Failed to open file.\n");
     jump(*context.failure_jump_point, 1);
+  }
   return (handle)file_handle;
 }
 
@@ -255,7 +258,10 @@ uintl get_file_size(handle file_handle)
 {
   LARGE_INTEGER large_integer;
   if (!GetFileSizeEx(file_handle, &large_integer))
+  {
+    print_failure("Failed to get file size.\n");
     jump(*context.failure_jump_point, 1);
+  }
   return large_integer.QuadPart;
 }
 
@@ -263,7 +269,10 @@ uint read_from_file(void *buffer, uint buffer_size, handle file_handle)
 {
   DWORD read_size;
   if (!ReadFile(file_handle, buffer, buffer_size, &read_size, 0))
+  {
+    print_failure("Failed to read file.\n");
     jump(*context.failure_jump_point, 1);
+  }
   return read_size;
 }
 
@@ -279,5 +288,8 @@ static void initialize_this_thread(void)
   default_allocator.state = &default_allocator_state;
   context.allocator = &default_allocator;
 
-  assert(!set_jump_point(default_failure_jump_point));
+  if (set_jump_point(default_failure_jump_point))
+  {
+    UNIMPLEMENTED();
+  }
 }
