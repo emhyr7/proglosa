@@ -269,4 +269,7 @@ void parse(const utf8 *path, program *program, parser *parser)
   }
 
 done_parsing:
+
+
+  context.failure_jump_point = prior_context_failure_jump_point;
 }

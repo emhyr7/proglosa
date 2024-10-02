@@ -222,7 +222,7 @@ thread_local allocator default_allocator =
 
 jump_point default_failure_jump_point;
 
-thread_local context_type context =
+thread_local context_data context =
 {
   .allocator = 0, /* initialized at runtime */
   .failure_jump_point = &default_failure_jump_point,

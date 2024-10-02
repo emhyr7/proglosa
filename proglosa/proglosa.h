@@ -357,9 +357,9 @@ typedef struct
   allocator *allocator;
 
   jump_point *failure_jump_point;
-} context_type;
+} context_data;
 
-extern thread_local context_type context;
+extern thread_local context_data context;
 
 void *push(uint size, uint alignment);
 
