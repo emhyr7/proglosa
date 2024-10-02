@@ -76,6 +76,11 @@ inline void report_token(reporting_type type, token *token, const utf8 *source, 
 
 typedef struct
 {
+  
+} program;
+
+typedef struct
+{
   const utf8 *source_path;
   utf8 *source;
   uint  source_size;
@@ -87,9 +92,12 @@ typedef struct
   utf32 rune;
   uints increment;
 
+  bool finished_parsing;
+  jump_point etx_jump_point;
+  jump_point failure_jump_point;
   token token;
+
+  program *program;
 } parser;
 
-void load_into_parser(const utf8 *path, parser *parser);
-
-token_type tokenize(parser *parser);
+void parse(const utf8 *path, program *program, parser *parser);

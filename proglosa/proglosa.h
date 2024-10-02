@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
 #include <threads.h>
 #include <uchar.h>
 #include <wchar.h>
@@ -204,6 +205,15 @@ static const uintl bit64 = 1ull << 63;
 
 /*****************************************************************************/
 
+typedef jmp_buf jump_point;
+
+extern jump_point default_failure_jump_point;
+
+#define set_jump_point(...) setjmp(__VA_ARGS__)
+#define jump(...)           longjmp(__VA_ARGS__)
+
+/*****************************************************************************/
+
 typedef va_list vargs;
 
 #define get_vargs(...) va_start(__VA_ARGS__)
@@ -345,23 +355,17 @@ typedef struct
 typedef struct
 {
   allocator *allocator;
-} context;
 
-extern thread_local context ctx;
+  jump_point *failure_jump_point;
+} context_type;
 
-inline void *push(uint size, uint alignment)
-{
-  allocator *allocator = ctx.allocator;
-  return allocator->push(size, alignment, allocator->state);
-}
+extern thread_local context_type context;
+
+void *push(uint size, uint alignment);
 
 #define push_type(type, count) (type *)push(count * sizeof(type), alignof(type))
 
-inline void pop(uint size, uint alignment)
-{
-  allocator *allocator = ctx.allocator;
-  allocator->pop(size, alignment, allocator->state);
-}
+void pop(uint size, uint alignment);
 
 #define pop_type(type, count) pop(count * sizeof(type), alignof(type))
 

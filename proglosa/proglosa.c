@@ -1,11 +1,11 @@
 #include "proglosa.h"
 #include "proglosa_parsing.h"
 
-static void initialize(void);
+static void initialize_this_thread(void);
 
 int main(int arguments_count, char **arguments)
 {
-  initialize();
+  initialize_this_thread();
 
   if (arguments_count <= 1)
   {
@@ -15,15 +15,8 @@ int main(int arguments_count, char **arguments)
 
   parser parser;
   const utf8 *source_path = arguments[1];
-  load_into_parser(source_path, &parser);
-  for (;;)
-  {
-    token_type type = tokenize(&parser);
-    const utf8 *representation = token_type_representations[type];
-    report_token_comment(&parser.token, parser.source, parser.source_path, representation);
-    if (type == etx_token_type)
-      break;
-  }
+  program program;
+  parse(source_path, &program, &parser);
   return 0;
 }
 
@@ -227,10 +220,25 @@ thread_local allocator default_allocator =
 
 /*****************************************************************************/
 
-thread_local context ctx =
+jump_point default_failure_jump_point;
+
+thread_local context_type context =
 {
   .allocator = 0, /* initialized at runtime */
+  .failure_jump_point = &default_failure_jump_point,
 };
+
+void *push(uint size, uint alignment)
+{
+  allocator *allocator = context.allocator;
+  return allocator->push(size, alignment, allocator->state);
+}
+
+void pop(uint size, uint alignment)
+{
+  allocator *allocator = context.allocator;
+  allocator->pop(size, alignment, allocator->state);
+}
 
 /*****************************************************************************/
 
@@ -238,21 +246,24 @@ handle open_file(const char *file_path)
 {
   OFSTRUCT of;
   HFILE file_handle = OpenFile(file_path, &of, OF_READWRITE);
-  assert(file_handle != HFILE_ERROR);
+  if (file_handle == HFILE_ERROR)
+    jump(*context.failure_jump_point, 1);
   return (handle)file_handle;
 }
 
 uintl get_file_size(handle file_handle)
 {
   LARGE_INTEGER large_integer;
-  assert(GetFileSizeEx(file_handle, &large_integer));
+  if (!GetFileSizeEx(file_handle, &large_integer))
+    jump(*context.failure_jump_point, 1);
   return large_integer.QuadPart;
 }
 
 uint read_from_file(void *buffer, uint buffer_size, handle file_handle)
 {
   DWORD read_size;
-  assert(ReadFile(file_handle, buffer, buffer_size, &read_size, 0));
+  if (!ReadFile(file_handle, buffer, buffer_size, &read_size, 0))
+    jump(*context.failure_jump_point, 1);
   return read_size;
 }
 
@@ -263,8 +274,10 @@ void close_file(handle file_handle)
 
 /*****************************************************************************/
 
-static void initialize(void)
+static void initialize_this_thread(void)
 {
   default_allocator.state = &default_allocator_state;
-  ctx.allocator = &default_allocator;
+  context.allocator = &default_allocator;
+
+  assert(!set_jump_point(default_failure_jump_point));
 }

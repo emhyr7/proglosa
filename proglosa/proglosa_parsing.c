@@ -38,7 +38,7 @@ static utf32 peek(uints *increment, parser *parser)
   if (peek_offset >= parser->source_size)
   {
     *increment = 0;
-    return (utf32)etx_token_type;
+    return etx_token_type;
   }
   utf32 rune;
   *increment = decode_utf8(&rune, parser->source + peek_offset);
@@ -59,6 +59,8 @@ static utf32 advance(parser *parser)
   parser->column++;
   parser->rune      = rune;
   parser->increment = increment;
+  if (parser->rune == (utf32)etx_token_type)
+    jump(parser->etx_jump_point, 1);
   return rune;
 }
 
@@ -82,7 +84,7 @@ static bool on_number(parser *parser)
   return iswdigit(parser->rune);
 }
 
-void load_into_parser(const utf8 *path, parser *parser)
+static void load_into_parser(const utf8 *path, parser *parser)
 {
   parser->source_path = path;
   handle source_handle = open_file(parser->source_path);
@@ -98,7 +100,7 @@ void load_into_parser(const utf8 *path, parser *parser)
   advance(parser);
 }
 
-token_type tokenize(parser *parser)
+static token_type tokenize(parser *parser)
 {
   token *token = &parser->token;
   while (on_space(parser))
@@ -113,9 +115,6 @@ repeat:
   utf32 peeked_rune;
   switch (parser->rune)
   {
-  case etx_token_type:
-    token->type = etx_token_type;
-    goto finished;
   case '"':
     for(;;)
     { 
@@ -237,11 +236,37 @@ repeat:
       break;
   }
 
-finished:
   token->ending = parser->offset;
   if (token->type == unknown_token_type)
   {
       report_token_failure(token, parser->source, parser->source_path, "unknown token.");
+      jump(parser->failure_jump_point, 1);
   }
   return token->type;
+}
+
+void parse(const utf8 *path, program *program, parser *parser)
+{
+  parser->program = program;
+
+  if (set_jump_point(parser->failure_jump_point))
+  {
+    UNIMPLEMENTED();
+  }
+  jump_point *prior_context_failure_jump_point = context.failure_jump_point;
+  context.failure_jump_point = &parser->failure_jump_point;
+
+  load_into_parser(path, parser);
+
+  if (set_jump_point(parser->etx_jump_point))
+    goto done_parsing;
+
+  for (;;)
+  {
+    token_type type = tokenize(parser);
+    const utf8 *representation = token_type_representations[type];
+    report_token_comment(&parser->token, parser->source, parser->source_path, representation);
+  }
+
+done_parsing:
 }
