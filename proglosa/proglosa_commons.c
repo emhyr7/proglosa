@@ -6,29 +6,32 @@ uintb clz(uintl value)
 {
   unsigned long index;
   if (!_BitScanReverse64(&index, value))
-    return sizeof(value) * byte_bits_count;
-  return sizeof(value) * byte_bits_count - index - 1;
+    return sizeof(value) * byte_width;
+  return sizeof(value) * byte_width - index - 1;
 }
 
 uintb ctz(uintl value)
 {
   unsigned long index;
   if (!_BitScanForward64(&index, value))
-    return sizeof(value) * byte_bits_count;
+    return sizeof(value) * byte_width;
   return index;
 }
 
-sintl index_bit_range(const uintb range_size, const bool of_zeros, const uint *bytes, const uint bytes_count)
+/* this is half-optimized just 'cause
+      - Emhyr 3.10.2024 */
+sintl index_bit_range(uintb range_size, bit of_zeros, const uint *bytes, uint bytes_count)
 {
   sintl range_index = -1;
-  const uintb byte_granularity = sizeof(*bytes) * byte_bits_count; 
+  uintb byte_granularity = sizeof(*bytes) * byte_width; 
   assert(range_size <= byte_granularity * 2);
 
-  const uintl mask = (1 << range_size) - 1;
+  uintl mask = (1 << range_size) - 1;
   uintb shift_count = 0;
   uint byte_index = 0;
   for (;;)
   {
+    /* FUCK FUCKING FUCKS FUCK BITWISE SHIT FUCK FUCKS FUCK BITS */
     if (byte_index == bytes_count) break;
 
     uintl buffer = (uintl)0 | (uintl)bytes[byte_index];
@@ -43,8 +46,8 @@ sintl index_bit_range(const uintb range_size, const bool of_zeros, const uint *b
       continue;
     }
 
-    const uintl shifted_mask = mask << shift_count;
-    const uintl masked = buffer & shifted_mask;
+    uintl shifted_mask = mask << shift_count;
+    uintl masked = buffer & shifted_mask;
     if (masked == shifted_mask)
     {
       range_index = byte_index * byte_granularity + shift_count;
@@ -57,6 +60,15 @@ sintl index_bit_range(const uintb range_size, const bool of_zeros, const uint *b
   return range_index;
 }
 
+sintl toggle_bit_range(uintb range_size, bit of_zero, uint *bytes, uint bytes_count)
+{
+  sintl index = index_bit_range(range_size, of_zero, bytes, bytes_count);
+  if (index < 0) return -1;
+  uint byte_granularity = sizeof(uint) * byte_width;
+  uint *byte = bytes + index / byte_granularity;
+  *byte ^= ((1 << range_size) - 1) << (index % byte_granularity);
+  return index;
+}
 
 /*****************************************************************************/
 
@@ -204,7 +216,7 @@ void release_memory(void *memory, uint size)
 
 /*****************************************************************************/
 
-void *push_into_linear_allocator(uint size, uint alignment, linear_allocator *state)
+void *allocate_from_linear_allocator(uint size, uint alignment, linear_allocator *state)
 {
   uint forward_alignment = state->chunk ? get_forward_alignment((address)state->chunk->memory + state->chunk->mass, alignment) : 0; 
   if (!state->chunk || state->chunk->mass + forward_alignment + size > state->chunk->size)
@@ -220,19 +232,19 @@ void *push_into_linear_allocator(uint size, uint alignment, linear_allocator *st
   }
   forward_alignment = get_forward_alignment((address)state->chunk->memory + state->chunk->mass, alignment);
   void *memory = state->chunk->memory + state->chunk->mass + forward_alignment;
-  if (state->enabled_nullify) fill_memory(memory, size, 0);
+  if (state->enabled_nullify) fill_memory(0, memory, size);
   state->chunk->mass += forward_alignment + size;
   return memory;
 }
 
-void pop_from_linear_allocator(uint size, uint alignment, linear_allocator *state)
+void release_from_linear_allocator(uint size, uint alignment, linear_allocator *state)
 {
   while (state->chunk && size)
   {
     uint mass = state->chunk->mass;
     size += get_backward_alignment((address)state->chunk->memory + mass, alignment);
-    bool releasable_chunk = (sintl)mass - size <= 0;
-    state->chunk->mass -= size;
+    bit releasable_chunk = (sintl)mass - size <= 0;
+    state->chunk->mass -= size; /* this can over subtract which is okay because we'll release it at that circumstance */ 
     if (releasable_chunk)
     {
       linear_allocator_chunk *releasable_chunk = state->chunk;
@@ -246,19 +258,40 @@ void pop_from_linear_allocator(uint size, uint alignment, linear_allocator *stat
 
 /*****************************************************************************/
 
-void *push_into_chunk_allocator(uint size, chunk_allocator *state)
+void *allocate_from_chunk_allocator(uint size, chunk_allocator *state)
 {
-  if (!state->chunks)
+  uint byte_granularity = sizeof(uint) * byte_width;
+  uint allocated_chunks_count = size / state->chunk_size + (size % state->chunk_size > 0);
+  if (!state->block)
   {
+  allocate_new_block:
+    uint new_block_count = state->minimum_block_chunks_count + allocated_chunks_count;
+    uint new_block_bits_size = align_forwards(new_block_count / byte_granularity, universal_alignment);
+    uint new_block_size = sizeof(chunk_allocator_block) + new_block_bits_size + state->chunk_size * new_block_count;
+    chunk_allocator_block *new_block = (chunk_allocator_block *)allocate_memory(new_block_size);
+    fill_memory(0, new_block, new_block_size);
+    new_block->count = new_block_count;
+    new_block->bits = (uint *)new_block->tailing_memory;
+    new_block->chunks = new_block->tailing_memory + new_block_bits_size;
+    new_block->prior = state->block;
+    state->block = new_block;
   }
- 
-  void *memory;
-  return memory;
+  sintl allocated_chunks_index = toggle_bit_range(allocated_chunks_count, 1, state->block->bits, state->block->count);
+  if (allocated_chunks_index < 0) goto allocate_new_block;
+  void *chunk = state->block->chunks + allocated_chunks_index * state->chunk_size;
+  if (state->enabled_nullify) fill_memory(0, chunk, state->chunk_size);
+  return chunk;
 }
 
-void pop_from_chunk_allocator(uint size, chunk_allocator *state)
+void release_from_chunk_allocator(uint index, uint size, chunk_allocator *state)
 {
-  UNIMPLEMENTED();
+  if (state->block)
+  {
+    size /= state->chunk_size + (size % state->chunk_size > 0);
+    uint byte_granularity = sizeof(uint) * byte_width;
+    uint *byte = state->block->bits + index / byte_granularity;
+    *byte ^= ((1 << size) - 1) << (index % byte_granularity);   
+  }
 }
 
 /*****************************************************************************/
@@ -267,10 +300,10 @@ thread_local linear_allocator default_allocator_state;
 
 thread_local allocator default_allocator =
 {
-  .type  = linear_allocator_type,
-  .state = 0, /* initialized at runtime */
-  .push  = (push_procedure *)&push_into_linear_allocator,
-  .pop   = (pop_procedure *)&pop_from_linear_allocator,
+  .type     = linear_allocator_type,
+  .state    = 0, /* initialized at runtime */
+  .allocate = (allocate_procedure *)&allocate_from_linear_allocator,
+  .release  = (release_procedure *)&release_from_linear_allocator,
 };
 
 /*****************************************************************************/
@@ -286,13 +319,13 @@ thread_local context_data context =
 void *push(uint size, uint alignment)
 {
   allocator *allocator = context.allocator;
-  return allocator->push(size, alignment, allocator->state);
+  return allocator->allocate(size, alignment, allocator->state);
 }
 
 void pop(uint size, uint alignment)
 {
   allocator *allocator = context.allocator;
-  allocator->pop(size, alignment, allocator->state);
+  allocator->release(size, alignment, allocator->state);
 }
 
 /*****************************************************************************/

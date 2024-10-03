@@ -6,7 +6,6 @@
 
 #include <assert.h>
 #include <memory.h>
-#include <stdbool.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -53,41 +52,50 @@ int start(int arguments_count, char **arguments);
 
 /*****************************************************************************/
 
-typedef uint8_t  u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
+typedef uint8_t  uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
 
-typedef int8_t  s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
+typedef uint8  uintb;
+typedef uint16 uints;
+typedef uint32 uint;
+typedef uint64 uintl;
 
-typedef u8  uintb;
-typedef u16 uints;
-typedef u32 uint;
-typedef u64 uintl;
-
-typedef s8  sintb;
-typedef s16 sints;
-typedef s32 sint;
-typedef s64 sintl;
+#define uintb_bits_count ((uint)8)
+#define uints_bits_count ((uint)16)
+#define uint_bits_count  ((uint)32)
+#define uintl_bits_count ((uint)64)
 
 #define uint_maximum_value (~(uint)0)
 
-typedef u8 byte;
-typedef u8 bit;
+typedef int8_t  sint8;
+typedef int16_t sint16;
+typedef int32_t sint32;
+typedef int64_t sint64;
 
-#define byte_bits_count ((uint)8)
+typedef sint8  sintb;
+typedef sint16 sints;
+typedef sint32 sint;
+typedef sint64 sintl;
 
-#define uint_bits_count  ((uint)32)
-#define uintl_bits_count ((uint)64)
+typedef float  float32;
+typedef double float64;
+
+typedef float64 floatl;
+
+typedef uint8 byte;
+typedef uint8 bit;
+
+#define byte_width ((uint)8)
 
 uintb clz(uintl value);
 
 uintb ctz(uintl value);
 
-sintl index_bit_range(uintb range_size, bool of_zeros, const uint *bytes, uint bytes_count);
+sintl index_bit_range(uintb range_size, bit of_zeros, const uint *bytes, uint bytes_count);
+
+sintl toggle_bit_range(uintb range_size, bit of_zeros, uint *bytes, uint bytes_count);
 
 #define lmask1  ((uint)0x00000001)
 #define lmask2  ((uint)0x00000003)
@@ -294,7 +302,7 @@ inline void copy_memory(void *destination, const void *source, uint size)
   memcpy(destination, source, size);
 }
 
-inline void fill_memory(void *destination, uint size, byte value)
+inline void fill_memory(byte value, void *destination, uint size)
 {
   memset(destination, value, size);
 }
@@ -339,36 +347,36 @@ typedef struct
 
 #define default_linear_allocator_minimum_chunk_size ((uint)4096)
 
-void *push_into_linear_allocator(uint size, uint alignment, linear_allocator *state);
+void *allocate_from_linear_allocator(uint size, uint alignment, linear_allocator *state);
 
-void pop_from_linear_allocator(uint size, uint alignment, linear_allocator *state);
+void release_from_linear_allocator(uint size, uint alignment, linear_allocator *state);
 
 /*****************************************************************************/
 
-typedef struct chunk_allocator_chunks chunk_allocator_chunks;
-struct chunk_allocator_chunks
+typedef struct chunk_allocator_block chunk_allocator_block;
+struct chunk_allocator_block
 {
   uint count;
-  uintl *bits;
-  byte *memory; 
-  chunk_allocator_chunks *prior;
+  uint *bits;
+  byte *chunks; 
+  chunk_allocator_block *prior;
   alignas(alignof(uintl)) byte tailing_memory[];
 };
 
 typedef struct
 {
-  uint chunks_count;
+  uint minimum_block_chunks_count;
   uint chunk_size;
-  chunk_allocator_chunks *chunks;
+  chunk_allocator_block *block;
   bit enabled_nullify : 1;
 } chunk_allocator;
 
-#define default_chunk_allocator_chunks_count ((uint)64)
-#define default_chunk_allocator_chunk_size ((uint)64)
+#define default_chunk_allocator_minimum_block_chunks_count ((uint)64)
+#define default_chunk_allocator_chunk_size                 ((uint)64)
 
-void *push_into_chunk_allocator(uint size, chunk_allocator *state);
+void *allocate_from_chunk_allocator(uint size, chunk_allocator *state);
 
-void pop_from_chunk_allocator(uint size, chunk_allocator *state);
+void release_from_chunk_allocator(uint index, uint size, chunk_allocator *state);
 
 /*****************************************************************************/
 
@@ -378,15 +386,16 @@ typedef enum
   chunk_allocator_type,
 } allocator_type;
 
-typedef void *push_procedure(uint size, uint alignment, void *state);
-typedef void pop_procedure(uint size, uint alignment, void *state);
+typedef void *allocate_procedure(uint size, uint alignment, void *state);
+
+typedef void release_procedure(uint size, uint alignment, void *state);
 
 typedef struct
 {
   allocator_type type;
   void *state;
-  push_procedure *push;
-  pop_procedure *pop;
+  allocate_procedure *allocate;
+  release_procedure *release;
 } allocator;
 
 /*****************************************************************************/

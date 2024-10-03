@@ -128,7 +128,7 @@ typedef struct
   utf32 rune;
   uints increment;
 
-  bool finished_parsing;
+  bit finished_parsing : 1;
   jump_point etx_jump_point;
   jump_point failure_jump_point;
   token token;

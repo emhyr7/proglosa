@@ -82,22 +82,22 @@ static utf32 advance(parser *parser)
   return rune;
 }
 
-static bool on(utf32 rune, parser *parser)
+static bit on(utf32 rune, parser *parser)
 {
   return rune == parser->rune;
 }
 
-static bool on_space(parser *parser)
+static bit on_space(parser *parser)
 {
   return iswspace(parser->rune);
 }
 
-static bool on_letter(parser *parser)
+static bit on_letter(parser *parser)
 {
   return iswalpha(parser->rune);
 }
 
-static bool on_number(parser *parser)
+static bit on_number(parser *parser)
 {
   return iswdigit(parser->rune);
 }
@@ -304,15 +304,15 @@ done_parsing:
 
 /*****************************************************************************/
 
-static bool initialize_this_thread(void)
+static bit initialize_this_thread(void)
 {
   default_allocator.state = &default_allocator_state;
   context.allocator = &default_allocator;
 
   if (set_jump_point(default_failure_jump_point))
-    return false;
+    return 0;
 
-  return true;
+  return 1;
 }
 
 int start(int arguments_count, char *arguments[])
