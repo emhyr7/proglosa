@@ -49,18 +49,11 @@ typedef struct
   uint column;
 } token;
 
-inline void v_report_token(reporting_type type, token *token, const utf8 *source, const utf8 *path, const utf8 *message, vargs vargs)
-{
-  v_report(type, source, path, token->beginning, token->ending, token->row, token->column, message, vargs);
-}
+typedef struct parser parser;
 
-inline void report_token(reporting_type type, token *token, const utf8 *source, const utf8 *path, const utf8 *message, ...)
-{
-  vargs vargs;
-  get_vargs(vargs, message);
-  v_report_token(type, token, source, path, message, vargs);
-  end_vargs(vargs);
-}
+void v_report_token(reporting_type type, parser *parser, const utf8 *message, vargs vargs);
+
+void report_token(reporting_type type, parser *parser, const utf8 *message, ...);
 
 #define report_token_comment(...) report_token(reporting_type_comment, __VA_ARGS__)
 #define report_token_caution(...) report_token(reporting_type_caution, __VA_ARGS__)
@@ -120,11 +113,12 @@ typedef struct
 
 /*****************************************************************************/
 
-typedef struct
+struct parser
 {
-  allocator allocator;
+  allocator final_allocator;
   allocator buffering_allocator;
   allocator *symbol_allocator;
+  allocator *identifier_allocator;
   
   const utf8 *source_path;
   utf8 *source;
@@ -144,6 +138,6 @@ typedef struct
 
   program *program;
   scope_node *current_scope;
-} parser;
+};
 
 void parse(const utf8 *path, program *program, parser *parser);

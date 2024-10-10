@@ -50,6 +50,19 @@ const utf8 token_tag_representations[][16] =
   #undef XPASTE
 };
 
+inline void v_report_token(reporting_type type, parser *parser, const utf8 *message, vargs vargs)
+{
+  v_report(type, parser->source, parser->source_path, parser->token.beginning, parser->token.ending, parser->token.row, parser->token.column, message, vargs);
+}
+
+inline void report_token(reporting_type type, parser *parser, const utf8 *message, ...)
+{
+  vargs vargs;
+  get_vargs(vargs, message);
+  v_report_token(type, parser, message, vargs);
+  end_vargs(vargs);
+}
+
 static utf32 peek(uints *increment, parser *parser)
 {
   uint peek_offset = parser->offset + parser->increment;
@@ -107,7 +120,7 @@ static void load_into_parser(const utf8 *path, parser *parser)
   parser->source_path = path;
   handle source_handle = open_file(parser->source_path);
   parser->source_size = (uint)get_file_size(source_handle);
-  parser->source = (utf8 *)allocate((uint)align_forwards(parser->source_size, 4), universal_alignment, &parser->allocator);
+  parser->source = (utf8 *)allocate((uint)align_forwards(parser->source_size, 4), universal_alignment, &parser->final_allocator);
   read_from_file(parser->source, parser->source_size, source_handle);
   close_file(source_handle);
 
@@ -257,7 +270,7 @@ repeat:
   token->ending = parser->offset;
   if (token->tag == token_tag_unknown)
   {
-      report_token_failure(token, parser->source, parser->source_path, "unknown token.");
+      report_token_failure(parser, "unknown token.");
       jump(*parser->failure_jump_point, 1);
   }
   return token->tag;
@@ -284,17 +297,72 @@ static utf8 *get_token_pointer(parser *parser)
   return parser->source + parser->token.beginning;
 }
 
+static void parse_declaration(parser *parser)
+{
+}
+
+typedef struct
+{
+  scratch initial_scratch;
+  allocator symbol_allocator;
+  allocator identifier_allocator;
+  allocator *prior_parser_symbol_allocator;
+  allocator *prior_parser_identifier_allocator;
+} scope_parsing;
+
+static void initialize_scope_parsing(scope_parsing *parsing, parser *parser)
+{
+  scratch initial_scratch;
+  get_scratch(&initial_scratch, &parser->buffering_allocator);
+
+  parsing->symbol_allocator = (allocator){&parser->buffering_allocator, 16 * sizeof(symbol)};
+  parsing->identifier_allocator = (allocator){&parser->buffering_allocator, 16 * 16};
+  parsing->prior_parser_symbol_allocator = parser->symbol_allocator;
+  parsing->prior_parser_identifier_allocator = parser->identifier_allocator;
+  parser->symbol_allocator = &parsing->symbol_allocator;
+  parser->identifier_allocator = &parsing->identifier_allocator;
+}
+
+static void uninitialize_scope_parsing(scope_parsing *parsing, parser *parser)
+{
+  parser->symbol_allocator = parsing->prior_parser_symbol_allocator;
+  parser->identifier_allocator = parsing->prior_parser_identifier_allocator;
+
+  end_scratch(&parsing->initial_scratch);
+}
+
 static void parse_structure_scope(scope_node *scope, parser *parser)
 {
-  allocator symbol_allocator     = {&parser->buffering_allocator, 16 * sizeof(symbol)};
-  allocator identifier_allocator = {&parser->buffering_allocator, 16 * 16};
+  scope_parsing parsing;
+  initialize_scope_parsing(&parsing, parser);
+
+  /* TODO: upon the failure of an iteration, deallocate the allocated memory
+           from the iteration, and skip to a valid onset. */
+
+  tokenize(parser);
+
+  for (;;)
+  {
+    switch (parser->token.tag)
+    {
+    case token_tag_identifier:
+      parse_declaration(parser);
+      break;
+    default:
+      report_token_failure(parser, "Expected an identifier token.");
+      goto failure;
+    }
+
+  failure:
+    jump(*parser->failure_jump_point, 1);
+  }
+
+  uninitialize_scope_parsing(&parsing, parser);
 }
 
 void parse(const utf8 *path, program *program, parser *parser)
 {
   fill_memory(0, parser, sizeof(*parser));
-  scratch scratch;
-  get_scratch(&scratch, &parser->allocator);
 
   parser->program = program;
 
@@ -306,7 +374,7 @@ void parse(const utf8 *path, program *program, parser *parser)
   if (set_jump_point(failure_jump_point))
   {
     /* TODO: handle failure here */
-    UNIMPLEMENTED();
+    goto defer;
   }
 
   /* load the source */
@@ -320,9 +388,9 @@ void parse(const utf8 *path, program *program, parser *parser)
   parse_structure_scope(&parser->program->global_scope, parser);
 
 done_parsing:
-  context.failure_jump_point = prior_context_failure_jump_point;
 
-  end_scratch(&scratch);
+defer:
+  context.failure_jump_point = prior_context_failure_jump_point;
 }
 
 /*****************************************************************************/
