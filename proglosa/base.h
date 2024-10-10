@@ -316,6 +316,7 @@ struct buffer
   byte *memory;
   buffer *prior;
   buffer *next;
+  alignas(universal_alignment) byte tailing_memory[];
 };
 
 typedef struct allocator allocator;

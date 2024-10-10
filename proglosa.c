@@ -286,7 +286,8 @@ static utf8 *get_token_pointer(parser *parser)
 
 static void parse_structure_scope(scope_node *scope, parser *parser)
 {
-  
+  allocator symbol_allocator     = {&parser->buffering_allocator, 16 * sizeof(symbol)};
+  allocator identifier_allocator = {&parser->buffering_allocator, 16 * 16};
 }
 
 void parse(const utf8 *path, program *program, parser *parser)

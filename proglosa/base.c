@@ -306,14 +306,13 @@ void *allocate(uint size, uint alignment, allocator *allocator)
     forward_alignment = 0;
     if (!allocator->minimum_buffer_size) allocator->minimum_buffer_size = default_allocator_minimum_buffer_size;
     uint buffer_size = get_maximum(size, allocator->minimum_buffer_size);
-    uint buffer_header_size = align_forwards(sizeof(buffer), universal_alignment);
-    uint allocation_size = buffer_header_size + buffer_size;
+    uint allocation_size = sizeof(buffer) + buffer_size;
     buffer *new_buffer = allocator->allocator ? allocate(allocation_size, alignof(buffer), allocator->allocator) : allocate_memory(allocation_size);
     new_buffer->prior = allocator->active_buffer;
     if (allocator->active_buffer) allocator->active_buffer->next = new_buffer;
     new_buffer->mass = 0;
     new_buffer->size = buffer_size;
-    new_buffer->memory = (byte *)new_buffer + buffer_header_size;
+    new_buffer->memory = new_buffer->tailing_memory;
     new_buffer->next = 0;
     allocator->active_buffer = new_buffer;
     if (!allocator->first_buffer) allocator->first_buffer = new_buffer;
@@ -335,15 +334,19 @@ void get_scratch(scratch *scratch, allocator *allocator)
 
 void end_scratch(scratch *scratch)
 {
-  buffer *buffer;
+  buffer *current_buffer = scratch->allocator->active_buffer;
   for (
-    buffer = scratch->allocator->active_buffer;
-    buffer && buffer != scratch->buffer;
-    buffer = buffer->prior)
-    buffer->mass = 0;
-  ASSERT(buffer == scratch->buffer);
-  if (buffer) buffer->mass = scratch->mass;
-  scratch->allocator->active_buffer = buffer;
+    buffer *prior_buffer;
+    current_buffer && current_buffer != scratch->buffer;
+    current_buffer = prior_buffer)
+  {
+    prior_buffer = current_buffer->prior;
+    if (!scratch->allocator->allocator) deallocate_memory(current_buffer, sizeof(buffer) + current_buffer->size);
+    else current_buffer->mass = 0;
+  }
+  ASSERT(current_buffer == scratch->buffer);
+  if (current_buffer) current_buffer->mass = scratch->mass;
+  scratch->allocator->active_buffer = current_buffer;
 }
 
 /*****************************************************************************/

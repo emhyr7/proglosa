@@ -123,7 +123,7 @@ typedef struct
 typedef struct
 {
   allocator allocator;
-  allocator *buffering_allocator;
+  allocator buffering_allocator;
   allocator *symbol_allocator;
   
   const utf8 *source_path;
