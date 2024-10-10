@@ -308,17 +308,15 @@ void *allocate(uint size, uint alignment, allocator *allocator)
     uint buffer_size = get_maximum(size, allocator->minimum_buffer_size);
     uint buffer_header_size = align_forwards(sizeof(buffer), universal_alignment);
     uint allocation_size = buffer_header_size + buffer_size;
-    void *memory = allocator->allocator ? allocate(allocation_size, alignof(buffer), allocator->allocator) : allocate_memory(allocation_size);
-    if (allocator->active_buffer)
-    {
-      allocator->active_buffer->next = memory;
-      allocator->active_buffer->next->prior = allocator->active_buffer;
-    }
-    allocator->active_buffer = memory;
-    allocator->active_buffer->mass = 0;
-    allocator->active_buffer->size = buffer_size;
-    allocator->active_buffer->memory = (byte *)memory + buffer_header_size;
-    allocator->active_buffer->next = 0;
+    buffer *new_buffer = allocator->allocator ? allocate(allocation_size, alignof(buffer), allocator->allocator) : allocate_memory(allocation_size);
+    new_buffer->prior = allocator->active_buffer;
+    if (allocator->active_buffer) allocator->active_buffer->next = new_buffer;
+    new_buffer->mass = 0;
+    new_buffer->size = buffer_size;
+    new_buffer->memory = (byte *)new_buffer + buffer_header_size;
+    new_buffer->next = 0;
+    allocator->active_buffer = new_buffer;
+    if (!allocator->first_buffer) allocator->first_buffer = new_buffer;
   }
 
   allocator->active_buffer->mass += forward_alignment;
@@ -335,7 +333,7 @@ void get_scratch(scratch *scratch, allocator *allocator)
   scratch->mass = allocator->active_buffer ? allocator->active_buffer->mass : 0;
 }
 
-void set_scratch(scratch *scratch)
+void end_scratch(scratch *scratch)
 {
   buffer *buffer;
   for (

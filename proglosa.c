@@ -286,11 +286,14 @@ static utf8 *get_token_pointer(parser *parser)
 
 static void parse_structure_scope(scope_node *scope, parser *parser)
 {
+  
 }
 
 void parse(const utf8 *path, program *program, parser *parser)
 {
   fill_memory(0, parser, sizeof(*parser));
+  scratch scratch;
+  get_scratch(&scratch, &parser->allocator);
 
   parser->program = program;
 
@@ -317,6 +320,8 @@ void parse(const utf8 *path, program *program, parser *parser)
 
 done_parsing:
   context.failure_jump_point = prior_context_failure_jump_point;
+
+  end_scratch(&scratch);
 }
 
 /*****************************************************************************/
@@ -332,8 +337,9 @@ int start(int arguments_count, char *arguments[])
     return -1;
   }
 
-  parser parser;
   program program;
+
+  parser parser;
   parse(arguments[1], &program, &parser);
 
   return 0;
