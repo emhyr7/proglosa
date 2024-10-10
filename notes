@@ -1,4 +1,4 @@
 ---- [ 1.10.2024 ] ------------------------------------------------------------
 
-* [ ] exception-style error handling
+* [x] exception-style error handling
 	- use `<setjmp.h>`
