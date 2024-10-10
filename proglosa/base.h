@@ -54,6 +54,7 @@
 
 /*****************************************************************************/
 
+#define print(...)         printf(__VA_ARGS__)
 #define print_comment(...) printf("[comment] " __VA_ARGS__)
 #define print_caution(...) printf("[caution] " __VA_ARGS__)
 #define print_failure(...) printf("[failure] " __VA_ARGS__)
@@ -294,7 +295,9 @@ address align_forwards(address x, uint a);
 
 void copy_memory(void *destination, const void *source, uint size);
 
-void fill_memory(byte value, void *destination, uint size);
+void fill_memory(void *destination, uint size, byte value);
+
+void zero_memory(void *destination, uint size);
 
 void move_memory(void *destination, const void *source, uint size);
 
@@ -311,9 +314,9 @@ void *reallocate_memory(uint size, void *memory, uint old_size);
 typedef struct buffer buffer;
 struct buffer
 {
-  uint mass;
-  uint size;
-  byte *memory;
+  uint    mass;
+  uint    size;
+  byte   *memory;
   buffer *prior;
   buffer *next;
   alignas(universal_alignment) byte tailing_memory[];
@@ -322,16 +325,20 @@ struct buffer
 typedef struct allocator allocator;
 struct allocator
 {
-  allocator *allocator; /* if 0, the global heap allocator is used */
-  uint minimum_buffer_size; /* if 0, `default_allocator_minimum_buffer_size` is used */
+  allocator *allocator;           /* if 0, `allocate_memory` is implicitly used */
+  uint       minimum_buffer_size; /* if 0, `default_allocator_minimum_buffer_size` is implicitly used */
 
   buffer *active_buffer;
   buffer *first_buffer;
 };
 
-#define default_allocator_minimum_buffer_size memory_page_size
+#define default_allocator_minimum_buffer_size (memory_page_size - sizeof(buffer))
 
-void *allocate(uint size, uint alignment, allocator *allocator);
+void *push(uint size, uint alignment, allocator *allocator);
+
+#define push_type(type, count, allocator) (type *)push(count * sizeof(type), alignof(type), allocator)
+
+#define push_train(type, extra, allocator) (type *)push(sizeof(type) + extra, alignof(type), allocator)
 
 typedef struct
 {
@@ -372,6 +379,14 @@ uintl get_file_size(handle file_handle);
 uint read_from_file(void *buffer, uint buffer_size, handle file_handle);
 
 void close_file(handle file_handle);
+
+/*****************************************************************************/
+
+uintl get_time(void);
+
+void begin_clock(void);
+
+float64 end_clock(void);
 
 /*****************************************************************************/
 

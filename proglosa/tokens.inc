@@ -39,10 +39,6 @@ XPASTE(right_angle2, 132, "'>>'")
 XPASTE(arrow,        133, "'->'")
 
 /* keywords */
-XPASTE(proc_keyword,   140, "`proc`")
-XPASTE(struct_keyword, 141, "`struct`")
-XPASTE(enum_keyword,   142, "`enum`")
-XPASTE(union_keyword,  143, "`union`")
 
 /* literals */
 XPASTE(identifier, 150, "identifier")

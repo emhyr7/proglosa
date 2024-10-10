@@ -1,3 +1,67 @@
+---- SYNTAX DESCRIPTION -------------------------------------------------------
+
+declaration
+	: identifier ':' [type-definition] [assignment]
+	;
+
+type-definition
+	: path
+	| pointer-type
+	| structure-type
+	| procedure-type
+	;
+
+path
+	: identifier {'.' identifier}
+	;
+
+pointer-type
+	: '@' type-definition
+	;
+
+structure-type
+	: `{` declaration {',' declaration} `}`
+	;
+
+procedure-type
+	: ['(' type-definition {',' type-definition} ')'] ['->' type-definition {',' type-definition}]
+	;
+
+assignment
+	: '=' expression
+	| ':' constant-expression
+	;
+
+constant-expression
+	: procedure
+	;
+
+procedure
+	: '(' declaration {',' declaration} ')' ['->' declaration {',' declaration}] procedure-scope
+	;
+
+-------------------------------------------------------------------------------
+
+/* neither a constant nor variable; a type */
+Color: {r: F32, g: F32, b: F32, a: F32} : {0, 0, 0, 0};
+
+/* variable */
+black: Color = {0, 0, 0, 1};
+
+/* constant */
+BLACK: Color : {0, 0, 0, 1};
+
+/* procedure */
+make_color: (F32, F32, F32, F32) -> Color : (r: F32, g: F32, b: F32, a: F32) -> Color { return {r, g, b, a} };
+
+/* scope */
+[old_color](color: Color) -> Color {
+    return {
+        .{r, g, b} = (color.a * color.{r, g, b} + (1 - color.a) * old_color.{r, g, b}).{r, g, b},
+        .a = color.a,
+    };
+}({0, 0, 0, 0});
+
 ---- [ 1.10.2024 ] ------------------------------------------------------------
 
 * [x] exception-style error handling

@@ -70,41 +70,60 @@ typedef enum
 
 extern const utf8 node_tag_representations[][16];
 
+typedef struct node node;
+typedef struct statement statement;
+typedef struct symbol symbol;
+typedef struct parameter parameter;
+
 #define XPASTE(identifier, body) typedef struct identifier##_node identifier##_node;
   #include "proglosa/nodes.inc"
 #undef XPASTE
 
-typedef struct
+#define XPASTE(identifier, body) struct identifier##_node body;
+  #include "proglosa/nodes.inc"
+#undef XPASTE
+
+struct node
 {
   node_tag tag;
   union
   {
-    #define XPASTE(identifier, body) identifier##_node *identifier;
+    #define XPASTE(identifier, body) identifier##_node identifier;
       #include "proglosa/nodes.inc"
     #undef XPASTE
   } data[];
-} node;
+};
 
-#define identifier_allocator_chunk_size (8)
-#define maximum_identifier_size         (uint_bits_count * identifier_allocator_chunk_size)
-
-typedef struct symbol symbol;
-struct symbol
+struct statement
 {
-  utf8 *identifier;
-  uints identifier_size;
+  node_tag tag;
+  statement *next;
   union
   {
-    structure_node *structure;
-    procedure_node *procedure;
-    value_node     *value;
-  };
+    #define XPASTE(identifier, body) identifier##_node identifier;
+      #include "proglosa/nodes.inc"
+    #undef XPASTE
+  } data[];
+};
+
+struct symbol
+{ 
+  utf8 *identifier;
+  uint identifier_size;
+  declaration_node *declaration;
+  node *type_definition;
+  node *assignment;
   symbol *next;
 };
 
-#define XPASTE(identifier, body) struct identifier##_node body;
-  #include "proglosa/nodes.inc"
-#undef XPASTE
+struct parameter
+{
+  parameter *next;
+  node *node;
+};
+
+#define identifier_allocator_chunk_size (8)
+#define maximum_identifier_size         (uint_bits_count * identifier_allocator_chunk_size)
 
 typedef struct
 {
@@ -115,10 +134,7 @@ typedef struct
 
 struct parser
 {
-  allocator final_allocator;
-  allocator buffering_allocator;
-  allocator *symbol_allocator;
-  allocator *identifier_allocator;
+  allocator general_allocator;
   
   const utf8 *source_path;
   utf8 *source;

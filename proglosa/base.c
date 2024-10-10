@@ -242,22 +242,27 @@ inline address align_forwards(address x, uint a)
 
 inline void copy_memory(void *destination, const void *source, uint size)
 {
-  memcpy(destination, source, size);
+  CopyMemory(destination, source, size);
 }
 
-inline void fill_memory(byte value, void *destination, uint size)
+inline void fill_memory(void *destination, uint size, byte value)
 {
-  memset(destination, value, size);
+  FillMemory(destination, size, value);
+}
+
+inline void zero_memory(void *destination, uint size)
+{
+  ZeroMemory(destination, size);
 }
 
 inline void move_memory(void *destination, const void *source, uint size)
 {
-  memmove(destination, source, size);
+  MoveMemory(destination, source, size);
 }
 
 inline void *allocate_memory(uint size)
 {
-  void *memory = malloc(size);
+  void *memory = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   if (!memory)
   {
     print_failure("loser !");
@@ -268,21 +273,18 @@ inline void *allocate_memory(uint size)
 
 inline void deallocate_memory(void *memory, uint size)
 {
-  free(memory);
+  VirtualFree(memory, 0, MEM_RELEASE);
 }
 
 inline void *reallocate_memory(uint size, void *old_memory, uint old_size)
 {
-  void *memory = realloc(old_memory, size);
-  if (!memory)
-  {
-    print_failure("loser !");
-    jump(*context.failure_jump_point, 1);
-  }
+  void *memory = allocate_memory(size);
+  copy_memory(memory, old_memory, old_size);
+  deallocate_memory(old_memory, old_size);
   return memory;
 }
 
-void *allocate(uint size, uint alignment, allocator *allocator)
+void *push(uint size, uint alignment, allocator *allocator)
 {
   if (!allocator->active_buffer) allocator->active_buffer = allocator->first_buffer;
 
@@ -299,7 +301,6 @@ void *allocate(uint size, uint alignment, allocator *allocator)
       allocator->active_buffer = allocator->active_buffer->next;
     }
   }
-  else forward_alignment = 0;
 
   if (would_overflow)
   {
@@ -307,7 +308,7 @@ void *allocate(uint size, uint alignment, allocator *allocator)
     if (!allocator->minimum_buffer_size) allocator->minimum_buffer_size = default_allocator_minimum_buffer_size;
     uint buffer_size = get_maximum(size, allocator->minimum_buffer_size);
     uint allocation_size = sizeof(buffer) + buffer_size;
-    buffer *new_buffer = allocator->allocator ? allocate(allocation_size, alignof(buffer), allocator->allocator) : allocate_memory(allocation_size);
+    buffer *new_buffer = allocator->allocator ? push(allocation_size, alignof(buffer), allocator->allocator) : allocate_memory(allocation_size);
     new_buffer->prior = allocator->active_buffer;
     if (allocator->active_buffer) allocator->active_buffer->next = new_buffer;
     new_buffer->mass = 0;
@@ -321,7 +322,7 @@ void *allocate(uint size, uint alignment, allocator *allocator)
   allocator->active_buffer->mass += forward_alignment;
   void *memory = allocator->active_buffer->memory + allocator->active_buffer->mass;
   allocator->active_buffer->mass += size;
-  fill_memory(0, memory, size);
+  fill_memory(memory, size, 0);
   return memory;
 }
 
@@ -402,10 +403,42 @@ void close_file(handle file_handle)
 
 /*****************************************************************************/
 
+uintl clock_frequency;
+
+thread_local uintl clock_beginning_time;
+
+inline uintl get_time(void)
+{
+  LARGE_INTEGER time;
+  QueryPerformanceCounter(&time);
+  return time.QuadPart;
+}
+
+inline void begin_clock(void)
+{
+  clock_beginning_time = get_time();
+}
+
+inline float64 end_clock(void)
+{
+  return (float64)(get_time() - clock_beginning_time) * 1000000 / clock_frequency;
+}
+
+/*****************************************************************************/
+
 bit initialize_base(void)
 {
+  {
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
+    clock_frequency = frequency.QuadPart;
+  }
+
   if (set_jump_point(context.default_failure_jump_point))
+  {
+    print_comment("Failed to %s.", __FUNCTION__);
     return 0;
+  }
   
   initialize_context();
   return 1;

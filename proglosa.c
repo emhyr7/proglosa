@@ -117,10 +117,13 @@ static bit on_number(parser *parser)
 
 static void load_into_parser(const utf8 *path, parser *parser)
 {
+  print_comment("Loading source: %s\n", path);
+
+  begin_clock();
   parser->source_path = path;
   handle source_handle = open_file(parser->source_path);
   parser->source_size = (uint)get_file_size(source_handle);
-  parser->source = (utf8 *)allocate((uint)align_forwards(parser->source_size, 4), universal_alignment, &parser->final_allocator);
+  parser->source = (utf8 *)push((uint)align_forwards(parser->source_size, 4), universal_alignment, &parser->general_allocator);
   read_from_file(parser->source, parser->source_size, source_handle);
   close_file(source_handle);
 
@@ -131,7 +134,7 @@ static void load_into_parser(const utf8 *path, parser *parser)
   advance(parser);
 }
 
-static token_tag tokenize(parser *parser)
+static token_tag get_token(parser *parser)
 {
   token *token = &parser->token;
   while (on_space(parser))
@@ -242,16 +245,7 @@ repeat:
       {
           do advance(parser);
           while(on_letter(parser) || on('_', parser) || on_number(parser));
-          utf8 *text = parser->source + token->beginning;
-          utf8 *ending = text + parser->offset;
-          utf8 ending_rune = *ending;
-          *ending = 0;
-               if (!compare_literal_string("proc",   text)) token->tag = token_tag_proc_keyword;
-          else if (!compare_literal_string("struct", text)) token->tag = token_tag_struct_keyword;
-          else if (!compare_literal_string("enum",   text)) token->tag = token_tag_enum_keyword;
-          else if (!compare_literal_string("union",  text)) token->tag = token_tag_union_keyword;
-          else token->tag = token_tag_identifier;
-          *ending = ending_rune;
+          token->tag = token_tag_identifier;
       }
       else if (on_number(parser))
       {
@@ -276,6 +270,21 @@ repeat:
   return token->tag;
 }
 
+static void ensure_token(token_tag tag, parser *parser)
+{
+  if (parser->token.tag != tag)
+  {
+    report_token_failure(parser, "Expected token: %s.", token_tag_representations[tag]);
+    jump(*parser->failure_jump_point, 1);
+  }
+}
+
+static void expect_token(token_tag tag, parser *parser)
+{
+  get_token(parser);
+  ensure_token(tag, parser);
+}
+
 /*****************************************************************************/
 
 const utf8 node_tag_representations[][16] =
@@ -297,72 +306,177 @@ static utf8 *get_token_pointer(parser *parser)
   return parser->source + parser->token.beginning;
 }
 
-static void parse_declaration(parser *parser)
+static void parse_structure_scope(scope_node *scope, parser *parser);
+static void parse_procedure_scope(scope_node *scope, parser *parser);
+
+static utf8 *parse_identifier(uint *identifier_size, parser *parser)
 {
+  ASSERT(parser->token.tag == token_tag_identifier);
+
+  *identifier_size = get_token_size(parser);
+  utf8 *identifier = push_type(utf8, *identifier_size, &parser->general_allocator);
+  copy_memory(identifier, get_token_pointer(parser), *identifier_size);
+  get_token(parser);
+  return identifier;
 }
 
-typedef struct
+static void parse_path(path_node *path, parser *parser)
 {
-  scratch initial_scratch;
-  allocator symbol_allocator;
-  allocator identifier_allocator;
-  allocator *prior_parser_symbol_allocator;
-  allocator *prior_parser_identifier_allocator;
-} scope_parsing;
-
-static void initialize_scope_parsing(scope_parsing *parsing, parser *parser)
-{
-  scratch initial_scratch;
-  get_scratch(&initial_scratch, &parser->buffering_allocator);
-
-  parsing->symbol_allocator = (allocator){&parser->buffering_allocator, 16 * sizeof(symbol)};
-  parsing->identifier_allocator = (allocator){&parser->buffering_allocator, 16 * 16};
-  parsing->prior_parser_symbol_allocator = parser->symbol_allocator;
-  parsing->prior_parser_identifier_allocator = parser->identifier_allocator;
-  parser->symbol_allocator = &parsing->symbol_allocator;
-  parser->identifier_allocator = &parsing->identifier_allocator;
+  ASSERT(parser->token.tag == token_tag_identifier);
+  for (;;)
+  {
+    path->identifier_size = get_token_size(parser);
+    path->identifier = push_type(utf8, path->identifier_size, &parser->general_allocator);
+    copy_memory(path->identifier, get_token_pointer(parser), path->identifier_size);
+    if (get_token(parser) != token_tag_dot) break;
+    expect_token(token_tag_identifier, parser);
+    path = path->next = push_type(path_node, 1, &parser->general_allocator);
+  }
+  path->next = 0;
 }
 
-static void uninitialize_scope_parsing(scope_parsing *parsing, parser *parser)
+static node *parse_type_definition(parser *parser)
 {
-  parser->symbol_allocator = parsing->prior_parser_symbol_allocator;
-  parser->identifier_allocator = parsing->prior_parser_identifier_allocator;
+  node *result = 0;
+  switch (parser->token.tag)
+  {
+  case token_tag_identifier:
+    /* path */
+    result = push_train(node, sizeof(path_node), &parser->general_allocator);
+    result->tag = node_tag_path;
+    parse_path(&result->data->path, parser);
+    break;
+  case token_tag_at:
+    /* pointer-type */
+    get_token(parser);
+    result = push_train(node, sizeof(pointer_type_node), &parser->general_allocator);
+    result->tag = node_tag_pointer_type;
+    result->data->pointer_type.subtype = parse_type_definition(parser);
+    break;
+  case token_tag_left_brace:
+    /* structure-type */
+    get_token(parser);
+    result = push_train(node, sizeof(structure_type_node), &parser->general_allocator);
+    result->tag = node_tag_structure_type;
+    parse_structure_scope(&result->data->structure_type.scope, parser);
+    break;
+  case token_tag_left_parenthesis:
+    /* procedure-type */
+    {
+      get_token(parser);
+      result = push_train(node, sizeof(procedure_type_node), &parser->general_allocator);
+      result->tag = node_tag_procedure_type;
+      result->data->procedure_type.parameters_count = 0;
+      parameter *prior_parameter = 0;
+      while (parser->token.tag != token_tag_right_parenthesis)
+      {
+        parameter *last_parameter = push_type(parameter, 1, &parser->general_allocator);
+        last_parameter->node = parse_type_definition(parser);
+        if (prior_parameter) prior_parameter = prior_parameter->next = last_parameter;
+        else result->data->procedure_type.parameters = prior_parameter = last_parameter;
+        ++result->data->procedure_type.parameters_count;
+        if (parser->token.tag == token_tag_comma) get_token(parser);
+      }
+      result->data->procedure_type.arguments_count = result->data->procedure_type.parameters_count;
+      if (get_token(parser) == token_tag_arrow)
+      {
+        get_token(parser);
+        for (;;)
+        {
+          node *node = parse_type_definition(parser);
+          if (!node) break;
+          parameter *last_parameter = push_type(parameter, 1, &parser->general_allocator);
+          last_parameter->node = node;
+          if (prior_parameter) prior_parameter = prior_parameter->next = last_parameter;
+          else result->data->procedure_type.parameters = prior_parameter = last_parameter;
+          ++result->data->procedure_type.parameters_count;
+        }
+      }
+      break;
+    }
+  default:
+    break;
+  }
 
-  end_scratch(&parsing->initial_scratch);
+  return result;
+}
+
+static void parse_declaration(declaration_node *declaration, parser *parser)
+{
+  ASSERT(parser->token.tag == token_tag_identifier);
+
+  declaration->symbol = push_type(symbol, 1, &parser->general_allocator);
+  symbol *symbol = declaration->symbol;
+
+  symbol->identifier_size = get_token_size(parser);
+  symbol->identifier = parse_identifier(&symbol->identifier_size, parser); 
+  ensure_token(token_tag_colon, parser);
+
+  get_token(parser); /* skip `:` */
+  symbol->type_definition = parse_type_definition(parser);
+}
+
+static void parse_procedure_scope(scope_node *scope, parser *parser)
+{
+  UNIMPLEMENTED();
 }
 
 static void parse_structure_scope(scope_node *scope, parser *parser)
 {
-  scope_parsing parsing;
-  initialize_scope_parsing(&parsing, parser);
+  fill_memory(scope, sizeof(*scope), 0);
 
   /* TODO: upon the failure of an iteration, deallocate the allocated memory
            from the iteration, and skip to a valid onset. */
 
-  tokenize(parser);
+  get_token(parser);
+
+  statement *prior_statement = 0;
+  symbol *prior_symbol = 0;
 
   for (;;)
   {
+    statement *last_statement = 0;
+
     switch (parser->token.tag)
     {
     case token_tag_identifier:
-      parse_declaration(parser);
+      last_statement = push_train(statement, sizeof(declaration_node), &parser->general_allocator);
+      parse_declaration(&last_statement->data->declaration, parser);
       break;
+    case token_tag_right_brace:
+      if (scope == &parser->program->global_scope)
+      {
+        report_token_failure(parser, "Encountered extraneous %s.", token_tag_representations[token_tag_right_brace]);
+        goto failure;
+      }
+      else
+      {
+        get_token(parser);
+        break;
+      }
     default:
-      report_token_failure(parser, "Expected an identifier token.");
+      report_token_failure(parser, "Expected %s.", token_tag_representations[token_tag_identifier]);
       goto failure;
+    }
+
+    if (prior_statement) prior_statement = prior_statement->next = last_statement;
+    else scope->statements = prior_statement = last_statement;
+
+    if (last_statement->tag == node_tag_declaration)
+    {
+      if (scope->symbols) prior_symbol = prior_symbol->next = last_statement->data->declaration.symbol;
+      else scope->symbols = prior_symbol = last_statement->data->declaration.symbol;
+      ++scope->symbols_count;
     }
 
   failure:
     jump(*parser->failure_jump_point, 1);
   }
-
-  uninitialize_scope_parsing(&parsing, parser);
 }
 
 void parse(const utf8 *path, program *program, parser *parser)
 {
-  fill_memory(0, parser, sizeof(*parser));
+  fill_memory(parser, sizeof(*parser), 0);
 
   parser->program = program;
 
@@ -373,6 +487,7 @@ void parse(const utf8 *path, program *program, parser *parser)
   context.failure_jump_point = parser->failure_jump_point;
   if (set_jump_point(failure_jump_point))
   {
+    print_comment("Failed to %s.", __FUNCTION__);
     /* TODO: handle failure here */
     goto defer;
   }
