@@ -264,7 +264,7 @@ repeat:
   token->ending = parser->offset;
   if (token->tag == token_tag_unknown)
   {
-      report_token_failure(parser, "unknown token.");
+      report_token_failure(parser, "Unknown token.");
       jump(*parser->failure_jump_point, 1);
   }
   return token->tag;
@@ -381,20 +381,22 @@ static node *parse_type_definition(parser *parser)
       if (get_token(parser) == token_tag_arrow)
       {
         get_token(parser);
-        for (;;)
+        do
         {
-          node *node = parse_type_definition(parser);
-          if (!node) break;
           parameter *last_parameter = push_type(parameter, 1, &parser->general_allocator);
-          last_parameter->node = node;
+          last_parameter->node = parse_type_definition(parser);
           if (prior_parameter) prior_parameter = prior_parameter->next = last_parameter;
           else result->data->procedure_type.parameters = prior_parameter = last_parameter;
           ++result->data->procedure_type.parameters_count;
+          if (parser->token.tag == token_tag_comma) get_token(parser);
         }
+        while (parser->token.tag == token_tag_identifier);
+        get_token(parser);
       }
       break;
     }
   default:
+    
     break;
   }
 
@@ -407,6 +409,7 @@ static void parse_declaration(declaration_node *declaration, parser *parser)
 
   declaration->symbol = push_type(symbol, 1, &parser->general_allocator);
   symbol *symbol = declaration->symbol;
+  symbol->declaration = declaration;
 
   symbol->identifier_size = get_token_size(parser);
   symbol->identifier = parse_identifier(&symbol->identifier_size, parser); 
@@ -441,7 +444,11 @@ static void parse_structure_scope(scope_node *scope, parser *parser)
     {
     case token_tag_identifier:
       last_statement = push_train(statement, sizeof(declaration_node), &parser->general_allocator);
+      last_statement->tag = node_tag_declaration;
       parse_declaration(&last_statement->data->declaration, parser);
+      break;
+    case token_tag_semicolon:
+      get_token(parser);
       break;
     case token_tag_right_brace:
       if (scope == &parser->program->global_scope)
@@ -459,15 +466,22 @@ static void parse_structure_scope(scope_node *scope, parser *parser)
       goto failure;
     }
 
-    if (prior_statement) prior_statement = prior_statement->next = last_statement;
-    else scope->statements = prior_statement = last_statement;
-
-    if (last_statement->tag == node_tag_declaration)
+    if (last_statement)
     {
-      if (scope->symbols) prior_symbol = prior_symbol->next = last_statement->data->declaration.symbol;
-      else scope->symbols = prior_symbol = last_statement->data->declaration.symbol;
-      ++scope->symbols_count;
+      if (prior_statement) prior_statement = prior_statement->next = last_statement;
+      else scope->statements = prior_statement = last_statement;
+
+      if (last_statement->tag == node_tag_declaration)
+      {
+        if (scope->symbols) prior_symbol = prior_symbol->next = last_statement->data->declaration.symbol;
+        else scope->symbols = prior_symbol = last_statement->data->declaration.symbol;
+        ++scope->symbols_count;
+      }
+
+      print_comment("Parsed %s.\n", node_tag_representations[last_statement->tag]);
     }
+
+    continue;
 
   failure:
     jump(*parser->failure_jump_point, 1);
