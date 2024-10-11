@@ -68,7 +68,7 @@ typedef enum
   #undef XPASTE
 } node_tag;
 
-extern const utf8 node_tag_representations[][16];
+extern const utf8 *node_tag_representations[];
 
 typedef struct node node;
 typedef struct statement statement;
@@ -113,6 +113,7 @@ struct symbol
   declaration_node *declaration;
   node *type_definition;
   node *assignment;
+  bit is_constant : 1;
   symbol *next;
 };
 

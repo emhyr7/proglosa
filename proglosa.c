@@ -24,7 +24,7 @@ void v_report(reporting_type type, const utf8 *source, const utf8 *path, uint be
   fprintf(stderr, "\t%u | ", row++);
   while (caret != source + beginning) fputc(*caret++, stderr);
 
-  fprintf(stderr, "\x1b[1m");
+  fprintf(stderr, "\x1b[1;31m");
   while (caret != source + ending)
   {
     if (*caret == '\n')
@@ -172,7 +172,7 @@ repeat:
     peeked_rune = peek(&peeked_increment, parser);
     if (peeked_rune == '=')
     {
-      token->tag = token_tag_equals2;
+      token->tag = token_tag_equality2;
       goto double_rune;
     }
     goto set_single_rune;
@@ -287,7 +287,7 @@ static void expect_token(token_tag tag, parser *parser)
 
 /*****************************************************************************/
 
-const utf8 node_tag_representations[][16] =
+const utf8 *node_tag_representations[] =
 {
   #define XPASTE(identifier, body) [node_tag_##identifier] = #identifier,
     #include "proglosa/nodes.inc"
@@ -391,16 +391,46 @@ static node *parse_type_definition(parser *parser)
           if (parser->token.tag == token_tag_comma) get_token(parser);
         }
         while (parser->token.tag == token_tag_identifier);
-        get_token(parser);
       }
       break;
     }
   default:
-    
+    get_token(parser);
     break;
   }
 
   return result;
+}
+
+typedef enum
+{
+  precedence_type,
+  precedence_default,
+  precedence_logic,
+  precedence_comparison,
+  precedence_term,
+  precedence_factor,
+  precedence_bitwise,
+  precedence_cast,
+  precedence_unary,
+} precedence;
+
+static node *parse_subexpression(precedence precedence, parser *parser)
+{
+  node *result = 0;
+  /* TODO */
+  return result;
+}
+
+static node *parse_expression(precedence precedence, parser *parser)
+{
+  node *expression = parse_subexpression(precedence, parser);
+  for (;;)
+  {
+     
+  }
+
+  return expression;
 }
 
 static void parse_declaration(declaration_node *declaration, parser *parser)
@@ -417,6 +447,29 @@ static void parse_declaration(declaration_node *declaration, parser *parser)
 
   get_token(parser); /* skip `:` */
   symbol->type_definition = parse_type_definition(parser);
+
+  bit is_constant = 0;
+  switch (parser->token.tag)
+  {
+  case token_tag_colon:
+    is_constant = 1;
+  case token_tag_equality:
+    get_token(parser);
+    symbol->assignment = parse_expression(precedence_default, parser);
+    break;
+  default:
+    if (!symbol->type_definition)
+    {
+      symbol->assignment = parse_expression(precedence_default, parser);
+      if (!symbol->assignment)
+      {
+        report_token_failure(parser, "A declaration with an implicit type must have an assignment.");
+        jump(*parser->failure_jump_point, 1);
+      }
+    }
+    break;
+  }
+  symbol->is_constant = is_constant;
 }
 
 static void parse_procedure_scope(scope_node *scope, parser *parser)
@@ -501,7 +554,7 @@ void parse(const utf8 *path, program *program, parser *parser)
   context.failure_jump_point = parser->failure_jump_point;
   if (set_jump_point(failure_jump_point))
   {
-    print_comment("Failed to %s.", __FUNCTION__);
+    print_comment("Failed to %s.\n", __FUNCTION__);
     /* TODO: handle failure here */
     goto defer;
   }
