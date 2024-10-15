@@ -104,17 +104,20 @@ static bit on(utf32 rune, parser *parser)
 
 static bit on_space(parser *parser)
 {
-  return iswspace(parser->rune);
+  /* TODO: complete this */
+  return (parser->rune >= '\t' && parser->rune <= '\r')
+         || (parser->rune == ' ');
 }
 
 static bit on_letter(parser *parser)
 {
-  return iswalpha(parser->rune);
+  return (parser->rune >= 'A' && parser->rune <= 'Z')
+         || (parser->rune >= 'a' && parser->rune <= 'z');
 }
 
 static bit on_number(parser *parser)
 {
-  return iswdigit(parser->rune);
+  return (parser->rune >= '0' && parser->rune <= '9');
 }
 
 static void load_into_parser(const utf8 *path, parser *parser)
@@ -141,8 +144,7 @@ static token_tag get_token(parser *parser)
   const utf8 *failure_message = 0;
 
   token *token = &parser->token;
-  while (on_space(parser))
-    advance(parser);
+  while (on_space(parser)) advance(parser);
 
 repeat:
   token->beginning = parser->offset;
@@ -519,7 +521,7 @@ void parse_number(expression *result, parser *parser)
   if (base)
   {
     result->tag = node_tag_digital;
-    result->data->digital.value = _strtoui64(string, &string_ending, base);
+    result->data->digital.value = strtoull(string, &string_ending, base);
   }
   else
   {
@@ -809,7 +811,7 @@ int start(int arguments_count, char *arguments[])
 
   if (arguments_count <= 1)
   {
-    print_failure("A source path wasn't given.");
+    print_failure("A source path wasn't given.\n");
     return -1;
   }
 
