@@ -33,9 +33,9 @@ inline void report(reporting_type type, const utf8 *source, const utf8 *path, ui
 
 typedef enum
 {
-  #define XPASTE(identifier, value, representation) token_tag_##identifier = value,
-    #include "proglosa_tokens.inc"
-  #undef XPASTE
+    #define XPASTE(identifier, value, representation) token_tag_##identifier = value,
+      #include "proglosa_tokens.inc"
+    #undef XPASTE
 } token_tag;
 
 extern const utf8 token_tag_representations[][16];
@@ -63,17 +63,15 @@ void report_token(reporting_type type, parser *parser, const utf8 *message, ...)
 
 typedef enum
 {
-  #define XPASTE(identifier, body) node_tag_##identifier,
-    #include "proglosa_nodes.inc"
-  #undef XPASTE
+#define XPASTE(identifier, body) node_tag_##identifier,
+  #include "proglosa_nodes.inc"
+#undef XPASTE
 } node_tag;
 
 extern const utf8 *node_tag_representations[];
 
-typedef struct node node;
-typedef struct statement statement;
-typedef struct symbol symbol;
-typedef struct parameter parameter;
+typedef struct expression expression;
+typedef struct statement  statement;
 
 #define XPASTE(identifier, body) typedef struct identifier##_node identifier##_node;
   #include "proglosa_nodes.inc"
@@ -83,44 +81,22 @@ typedef struct parameter parameter;
   #include "proglosa_nodes.inc"
 #undef XPASTE
 
-struct node
+struct expression
 {
   node_tag tag;
   union
   {
-    #define XPASTE(identifier, body) identifier##_node identifier;
-      #include "proglosa_nodes.inc"
-    #undef XPASTE
+#define XPASTE(identifier, body) identifier##_node identifier;
+  #include "proglosa_nodes.inc"
+#undef XPASTE
   } data[];
 };
 
 struct statement
 {
-  node_tag tag;
+  statement *prior;
   statement *next;
-  union
-  {
-    #define XPASTE(identifier, body) identifier##_node identifier;
-      #include "proglosa_nodes.inc"
-    #undef XPASTE
-  } data[];
-};
-
-struct symbol
-{ 
-  utf8 *identifier;
-  uint identifier_size;
-  declaration_node *declaration;
-  node *type_definition;
-  node *assignment;
-  bit is_constant : 1;
-  symbol *next;
-};
-
-struct parameter
-{
-  parameter *next;
-  node *node;
+  expression expression;
 };
 
 #define identifier_allocator_chunk_size (8)
@@ -128,7 +104,7 @@ struct parameter
 
 typedef struct
 {
-  scope_node global_scope;
+  structure_node global_scope;
 } program;
 
 /*****************************************************************************/
@@ -149,12 +125,13 @@ struct parser
   uints increment;
 
   bit finished_parsing : 1;
-  jump_point etx_jump_point;
-  jump_point *failure_jump_point;
-  token token;
 
-  program *program;
-  scope_node *current_scope;
+  jump_point  etx_jump_point;
+  jump_point *failure_jump_point;
+  
+  token           token;
+  program        *program;
+  structure_node *current_scope;
 };
 
 void parse(const utf8 *path, program *program, parser *parser);

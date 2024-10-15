@@ -45,9 +45,9 @@ void v_report(reporting_type type, const utf8 *source, const utf8 *path, uint be
 
 const utf8 token_tag_representations[][16] =
 {
-  #define XPASTE(identifier, value, representation) [token_tag_##identifier] = representation,
-    #include "proglosa_tokens.inc"
-  #undef XPASTE
+#define XPASTE(identifier, value, representation) [token_tag_##identifier] = representation,
+  #include "proglosa_tokens.inc"
+#undef XPASTE
 };
 
 inline void v_report_token(reporting_type type, parser *parser, const utf8 *message, vargs vargs)
@@ -241,24 +241,42 @@ repeat:
       break;
       
   default:
-      if (on_letter(parser) || on('_', parser))
+    if (on_letter(parser) || on('_', parser))
+    {
+      do advance(parser);
+      while(on_letter(parser) || on('_', parser) || on_number(parser));
+      token->tag = token_tag_identifier;
+    }
+    else if (on_number(parser))
+    {
+      if (on('0', parser))
       {
-          do advance(parser);
-          while(on_letter(parser) || on('_', parser) || on_number(parser));
-          token->tag = token_tag_identifier;
+        peeked_rune = peek(&peeked_increment, parser);
+        switch (peeked_rune)
+        {
+        case 'b': token->tag = token_tag_binary;      break;
+        case 'x': token->tag = token_tag_hexadecimal; break;
+        default:  token->tag = token_tag_digital;     break;
+        }
       }
-      else if (on_number(parser))
+
+      do
       {
-          do advance(parser);
-          while(on_number(parser) || on('_', parser));
-          token->tag = token_tag_number;
-      }
-      else
-      {
-          token->tag = token_tag_unknown;
+        advance(parser);
+        if (on('.', parser))
+        {
+          token->tag = token_tag_decimal;
           advance(parser);
+        }
       }
-      break;
+      while(on_number(parser) || on('_', parser));
+    }
+    else
+    {
+      token->tag = token_tag_unknown;
+      advance(parser);
+    }
+    break;
   }
 
   token->ending = parser->offset;
@@ -279,6 +297,12 @@ static void ensure_token(token_tag tag, parser *parser)
   }
 }
 
+static void ensure_get_token(token_tag tag, parser *parser)
+{
+  ensure_token(tag, parser);
+  get_token(parser);
+}
+
 static void expect_token(token_tag tag, parser *parser)
 {
   get_token(parser);
@@ -289,9 +313,9 @@ static void expect_token(token_tag tag, parser *parser)
 
 const utf8 *node_tag_representations[] =
 {
-  #define XPASTE(identifier, body) [node_tag_##identifier] = #identifier,
-    #include "proglosa_nodes.inc"
-  #undef XPASTE
+#define XPASTE(identifier, body) [node_tag_##identifier] = #identifier,
+  #include "proglosa_nodes.inc"
+#undef XPASTE
 };
 
 /*****************************************************************************/
@@ -306,221 +330,98 @@ static utf8 *get_token_pointer(parser *parser)
   return parser->source + parser->token.beginning;
 }
 
-static void parse_structure_scope(scope_node *scope, parser *parser);
-static void parse_procedure_scope(scope_node *scope, parser *parser);
+/* the same as C's */
+typedef uintb precedence;
+static const precedence precedences[] =
+{
+  [node_tag_invocation]                               = 15,
+  [node_tag_resolution]                               = 15,
 
-static utf8 *parse_identifier(uint *identifier_size, parser *parser)
+  [node_tag_negation]                                 = 14,
+  [node_tag_positive]                                 = 14,
+  [node_tag_negative]                                 = 14,
+  [node_tag_bitwise_negation]                         = 14,
+  [node_tag_reference]                                = 14,
+   
+  [node_tag_multiplication]                           = 13,
+  [node_tag_division]                                 = 13,
+  [node_tag_modulo]                                   = 13,
+  
+  [node_tag_addition]                                 = 12,
+  [node_tag_subtraction]                              = 12,
+  
+  [node_tag_bitwise_left_shift]                       = 11,
+  [node_tag_bitwise_right_shift]                      = 11,
+  
+  [node_tag_greater]                                  = 10,
+  [node_tag_lesser]                                   = 10,
+  [node_tag_inclusive_greater]                        = 10,
+  [node_tag_inclusive_lesser]                         = 10,
+  
+  [node_tag_equality]                                 = 9,
+  [node_tag_inequality]                               = 9,
+  
+  [node_tag_bitwise_conjunction]                      = 8,
+  
+  [node_tag_bitwise_exclusive_disjunction]            = 7,
+  
+  [node_tag_bitwise_disjunction]                      = 6,
+  
+  [node_tag_conjunction]                              = 5,
+  
+  [node_tag_disjunction]                              = 4,
+  
+  [node_tag_condition]                                = 3,
+  
+  [node_tag_assignment]                               = 2,
+  [node_tag_addition_assignment]                      = 2,
+  [node_tag_subtraction_assignment]                   = 2,
+  [node_tag_multiplication_assignment]                = 2,
+  [node_tag_division_assignment]                      = 2,
+  [node_tag_modulo_assignment]                        = 2,
+  [node_tag_bitwise_conjunction_assignment]           = 2,
+  [node_tag_bitwise_disjunction_assignment]           = 2,
+  [node_tag_bitwise_exclusive_disjunction_assignment] = 2,
+  [node_tag_bitwise_left_shift_assignment]            = 2,
+  [node_tag_bitwise_right_shift_assignment]           = 2,
+  
+  [node_tag_list]                                     = 1,
+};
+static const uint precedences_count = countof(precedences);
+
+static void parse_declaration(declaration_node      *result, parser *parser);
+static void parse_identifier (identifier_node       *reuslt, parser *parser);
+static void parse_string     (string_node           *result, parser *parser);
+static void parse_rune       (rune_node             *result, parser *parser);
+static void parse_number     (number_node           *result, parser *parser);
+static void parse_structure  (structure_node        *result, parser *parser);
+static void parse_procedure  (procedure_node        *result, parser *parser);
+
+static expression *parse_expression(precedence precedence, parser *parser);
+static statement  *parse_statement (                       parser *parser);
+
+void parse_declaration(declaration_node *result, parser *parser)
 {
   ASSERT(parser->token.tag == token_tag_identifier);
 
-  *identifier_size = get_token_size(parser);
-  utf8 *identifier = push_type(utf8, *identifier_size, &parser->general_allocator);
-  copy_memory(identifier, get_token_pointer(parser), *identifier_size);
-  get_token(parser);
-  return identifier;
-}
+  parse_identifier(&result->identifier, parser);
+  ensure_get_token(token_tag_colon, parser);
+  result->type_definition = parse_expression(0, parser);
 
-static void parse_path(path_node *path, parser *parser)
-{
-  ASSERT(parser->token.tag == token_tag_identifier);
-  for (;;)
-  {
-    path->identifier_size = get_token_size(parser);
-    path->identifier = push_type(utf8, path->identifier_size, &parser->general_allocator);
-    copy_memory(path->identifier, get_token_pointer(parser), path->identifier_size);
-    if (get_token(parser) != token_tag_dot) break;
-    expect_token(token_tag_identifier, parser);
-    path = path->next = push_type(path_node, 1, &parser->general_allocator);
-  }
-  path->next = 0;
-}
-
-static node *parse_type_definition(parser *parser)
-{
-  node *result = 0;
-  switch (parser->token.tag)
-  {
-  case token_tag_identifier:
-    /* path */
-    result = push_train(node, sizeof(path_node), &parser->general_allocator);
-    result->tag = node_tag_path;
-    parse_path(&result->data->path, parser);
-    break;
-  case token_tag_at:
-    /* pointer-type */
-    get_token(parser);
-    result = push_train(node, sizeof(pointer_type_node), &parser->general_allocator);
-    result->tag = node_tag_pointer_type;
-    result->data->pointer_type.subtype = parse_type_definition(parser);
-    break;
-  case token_tag_left_brace:
-    /* structure-type */
-    get_token(parser);
-    result = push_train(node, sizeof(structure_type_node), &parser->general_allocator);
-    result->tag = node_tag_structure_type;
-    parse_structure_scope(&result->data->structure_type.scope, parser);
-    break;
-  case token_tag_left_parenthesis:
-    /* procedure-type */
-    {
-      get_token(parser);
-      result = push_train(node, sizeof(procedure_type_node), &parser->general_allocator);
-      result->tag = node_tag_procedure_type;
-      result->data->procedure_type.parameters_count = 0;
-      parameter *prior_parameter = 0;
-      while (parser->token.tag != token_tag_right_parenthesis)
-      {
-        parameter *last_parameter = push_type(parameter, 1, &parser->general_allocator);
-        last_parameter->node = parse_type_definition(parser);
-        if (prior_parameter) prior_parameter = prior_parameter->next = last_parameter;
-        else result->data->procedure_type.parameters = prior_parameter = last_parameter;
-        ++result->data->procedure_type.parameters_count;
-        if (parser->token.tag == token_tag_comma) get_token(parser);
-      }
-      result->data->procedure_type.arguments_count = result->data->procedure_type.parameters_count;
-      if (get_token(parser) == token_tag_arrow)
-      {
-        get_token(parser);
-        do
-        {
-          parameter *last_parameter = push_type(parameter, 1, &parser->general_allocator);
-          last_parameter->node = parse_type_definition(parser);
-          if (prior_parameter) prior_parameter = prior_parameter->next = last_parameter;
-          else result->data->procedure_type.parameters = prior_parameter = last_parameter;
-          ++result->data->procedure_type.parameters_count;
-          if (parser->token.tag == token_tag_comma) get_token(parser);
-        }
-        while (parser->token.tag == token_tag_identifier);
-      }
-      break;
-    }
-  default:
-    get_token(parser);
-    break;
-  }
-
-  return result;
-}
-
-typedef enum
-{
-  precedence_type,
-  precedence_default,
-  precedence_logic,
-  precedence_comparison,
-  precedence_term,
-  precedence_factor,
-  precedence_bitwise,
-  precedence_cast,
-  precedence_unary,
-} precedence;
-
-precedence get_precedence(node_tag tag)
-{
-  UNIMPLEMENTED();
-}
-
-static node *parse_subexpression(precedence precedence, parser *parser)
-{
-  node *result = 0;
-  /* TODO */
-  return result;
-}
-
-static node *parse_expression(precedence left_precedence, parser *parser)
-{
-  node *left_node = parse_subexpression(left_precedence, parser);
-
-  for (;;)
-  {
-    node_tag tag;
-    switch (parser->token.tag)
-    {
-    /* logical */
-    case token_tag_and2:                 tag = node_tag_conjunction;       break;
-    case token_tag_bar2:                 tag = node_tag_disjunction;       break;
-    case token_tag_equality2:            tag = node_tag_equality;          break;
-    case token_tag_exclamation_equality: tag = node_tag_inequality;        break;
-    case token_tag_right_angle:          tag = node_tag_greater;           break;
-    case token_tag_left_angle:           tag = node_tag_lesser;            break;
-    case token_tag_right_angle_equality: tag = node_tag_inclusive_greater; break;
-    case token_tag_left_angle_equality:  tag = node_tag_inclusive_lesser;  break;
-      
-    /* arithmetic */
-    case token_tag_plus:     tag = node_tag_addition;       break;
-    case token_tag_dash:     tag = node_tag_subtraction;    break;
-    case token_tag_asterisk: tag = node_tag_multiplication; break;
-    case token_tag_slash:    tag = node_tag_division;       break;
-    case token_tag_percent:  tag = node_tag_modulo;         break;
-
-    /* bitwise */
-    case token_tag_and:          tag = node_tag_bitwise_conjunction;           break;
-    case token_tag_bar:          tag = node_tag_bitwise_disjunction;           break;
-    case token_tag_caret:        tag = node_tag_bitwise_exclusive_disjunction; break;
-    case token_tag_left_angle2:  tag = node_tag_bitwise_left_shift;            break;
-    case token_tag_right_angle2: tag = node_tag_bitwise_right_shift;           break;
-
-    /* assignment */
-    case token_tag_equality:              tag = node_tag_assignment;                               break;
-    case token_tag_plus_equality:         tag = node_tag_addition_assignment;                      break;
-    case token_tag_minus_equality:        tag = node_tag_subtraction_assignment;                   break;
-    case token_tag_asterisk_equality:     tag = node_tag_multiplication_assignment;                break;
-    case token_tag_slash_equality:        tag = node_tag_division_assignment;                      break;
-    case token_tag_percent_equality:      tag = node_tag_modulo_assignment;                        break;
-    case token_tag_and_equality:          tag = node_tag_bitwise_conjunction_assignment;           break;
-    case token_tag_bar_equality:          tag = node_tag_bitwise_disjunction_assignment;           break;
-    case token_tag_caret_equality:        tag = node_tag_bitwise_exclusive_disjunction_assignment; break;
-    case token_tag_left_angle2_equality:  tag = node_tag_bitwise_left_shift_assignment;            break;
-    case token_tag_right_angle2_equality: tag = node_tag_bitwise_right_shift_assignment;           break;
-
-    default:
-      goto expression_ended;
-    }
-
-    precedence right_precedence = get_precedence(tag);
-    if (right_precedence <= left_precedence) goto expression_ended;
-    get_token(parser);
-
-    node *right_node = push_train(node, sizeof(binary_node), &parser->general_allocator);
-    right_node->tag = tag;
-    right_node->data->binary.left = left_node;
-    right_node->data->binary.right = parse_expression(right_precedence, parser);
-    left_node = right_node;
-  }
-expression_ended:  
-
-  return left_node;
-}
-
-static void parse_declaration(declaration_node *declaration, parser *parser)
-{
-  ASSERT(parser->token.tag == token_tag_identifier);
-
-  declaration->symbol = push_type(symbol, 1, &parser->general_allocator);
-  symbol *symbol = declaration->symbol;
-  symbol->declaration = declaration;
-
-  symbol->identifier_size = get_token_size(parser);
-  symbol->identifier = parse_identifier(&symbol->identifier_size, parser); 
-  ensure_token(token_tag_colon, parser);
-
-  get_token(parser); /* skip `:` */
-  symbol->type_definition = parse_type_definition(parser);
-
-  bit is_constant = 0;
+  result->is_constant = 0;
   switch (parser->token.tag)
   {
   case token_tag_colon:
-    is_constant = 1;
+    result->is_constant = 1;
   case token_tag_equality:
     get_token(parser);
-    symbol->assignment = parse_expression(precedence_default, parser);
+    result->assignment = parse_expression(0, parser);
     break;
   default:
-    if (!symbol->type_definition)
+    if (!result->type_definition)
     {
-      symbol->assignment = parse_expression(precedence_default, parser);
-      if (!symbol->assignment)
+      result->assignment = parse_expression(0, parser);
+      if (!result->assignment)
       {
         report_token_failure(parser, "A declaration with an implicit type must have an assignment.");
         jump(*parser->failure_jump_point, 1);
@@ -528,45 +429,89 @@ static void parse_declaration(declaration_node *declaration, parser *parser)
     }
     break;
   }
-  symbol->is_constant = is_constant;
 }
 
-static void parse_procedure_scope(scope_node *scope, parser *parser)
+void parse_identifier(identifier_node *result, parser *parser)
+{
+  ASSERT(parser->token.tag == token_tag_identifier);
+
+  result->runes_count = get_token_size(parser);
+  result->runes = push_type(utf8, result->runes_count, &parser->general_allocator);
+  copy_typed(utf8, result->runes, get_token_pointer(parser), result->runes_count);
+  get_token(parser);
+}
+
+void parse_string(string_node *result, parser *parser)
+{
+  ASSERT(parser->token.tag == token_tag_string);
+
+  result->runes_count = get_token_size(parser);
+  result->runes = push_type(utf8, result->runes_count, &parser->general_allocator);
+  copy_typed(utf8, result->runes, get_token_pointer(parser), result->runes_count);
+  get_token(parser);
+}
+
+void parse_rune(rune_node *result, parser *parser)
 {
   UNIMPLEMENTED();
 }
 
-static void parse_structure_scope(scope_node *scope, parser *parser)
+void parse_number(number_node *result, parser *parser)
 {
-  fill_memory(scope, sizeof(*scope), 0);
+  static thread_local utf8 string[80];
+  uint string_size = get_token_size(parser);
+  if (string_size >= countof(string))
+  {
+    report_token_failure(parser, "number is too long.");
+    jump(*parser->failure_jump_point, 1);
+  }
+  copy_typed(utf8, string, get_token_pointer(parser), string_size);
+  string[string_size] = 0;
+  utf8 *string_ending;
+
+  /* FIX: this isn't failure-checked */
+  switch (parser->token.tag)
+  {
+  case token_tag_decimal:     result->float64 = strtod    (string, &string_ending);     break;
+  case token_tag_digital:     result->uint64  = _strtoui64(string, &string_ending, 10); break;
+  case token_tag_hexadecimal: result->uint64  = _strtoui64(string, &string_ending, 16); break;
+  case token_tag_binary:      result->uint64  = _strtoui64(string, &string_ending, 2);  break;
+  default: ASSERT(0); UNREACHABLE();
+  }
+
+  get_token(parser);
+}
+
+void parse_structure(structure_node *result, parser *parser)
+{
+  get_token(parser); /* get the first onset */
 
   /* TODO: upon the failure of an iteration, deallocate the allocated memory
            from the iteration, and skip to a valid onset. */
 
-  get_token(parser);
-
-  statement *prior_statement = 0;
-  symbol *prior_symbol = 0;
-
-  for (;;)
+  for (statement *prior_declaration = 0;;)
   {
-    statement *last_statement = 0;
+    statement *next_declaration = 0;
 
     switch (parser->token.tag)
     {
     case token_tag_identifier:
-      last_statement = push_train(statement, sizeof(declaration_node), &parser->general_allocator);
-      last_statement->tag = node_tag_declaration;
-      parse_declaration(&last_statement->data->declaration, parser);
+      /* encountered a declaration */
+      next_declaration = push_typed_train(statement, declaration_node, &parser->general_allocator);
+      next_declaration->expression.tag = node_tag_declaration;
+      parse_declaration(&next_declaration->expression.data->declaration, parser);
       break;
     case token_tag_semicolon:
-      get_token(parser);
+      get_token(parser); /* ignore */
       break;
     case token_tag_right_brace:
-      if (scope == &parser->program->global_scope)
+      /* because a file scope is implicitely a structure, encountering `{` is
+         erroneous if we're at the global scope.
+      */
+      if (parser->current_scope == &parser->program->global_scope)
       {
         report_token_failure(parser, "Encountered extraneous %s.", token_tag_representations[token_tag_right_brace]);
-        goto failure;
+        goto failed;
       }
       else
       {
@@ -574,35 +519,184 @@ static void parse_structure_scope(scope_node *scope, parser *parser)
         break;
       }
     default:
-      report_token_failure(parser, "Expected %s.", token_tag_representations[token_tag_identifier]);
-      goto failure;
+      report_token_failure(parser, "Expected %s, %s, or %s.",
+                           token_tag_representations[token_tag_identifier],
+                           token_tag_representations[token_tag_semicolon],
+                           token_tag_representations[token_tag_right_brace]);
+      goto failed;
     }
 
-    if (last_statement)
+    /* link the next declaration */
+    if (next_declaration)
     {
-      if (prior_statement) prior_statement = prior_statement->next = last_statement;
-      else scope->statements = prior_statement = last_statement;
-
-      if (last_statement->tag == node_tag_declaration)
-      {
-        if (scope->symbols) prior_symbol = prior_symbol->next = last_statement->data->declaration.symbol;
-        else scope->symbols = prior_symbol = last_statement->data->declaration.symbol;
-        ++scope->symbols_count;
-      }
-
-      print_comment("Parsed %s.\n", node_tag_representations[last_statement->tag]);
+      if (prior_declaration) prior_declaration = prior_declaration->next = next_declaration;
+      else result->declarations = prior_declaration = next_declaration;
+      result->declarations_count += 1;
+      report_token_comment(parser, "Parsed.");
     }
 
     continue;
 
-  failure:
+  failed:
     jump(*parser->failure_jump_point, 1);
   }
 }
 
+void parse_procedure(procedure_node *result, parser *parser)
+{
+  UNIMPLEMENTED();
+}
+
+expression *parse_expression(precedence left_precedence, parser *parser)
+{
+  /* parse left */
+  expression *left = 0;
+
+  {
+    switch (parser->token.tag)
+    {
+      /* structure */
+    case token_tag_left_brace:
+      left = push_typed_train(expression, structure_node, &parser->general_allocator);
+      parse_structure(&left->data->structure, parser);
+      goto finished;
+
+    case token_tag_left_parenthesis:
+      get_token(parser); /* skip `(` */
+      left = parse_expression(0, parser);
+      ensure_get_token(token_tag_right_parenthesis, parser);
+      break;
+
+    case token_tag_identifier:
+      left = push_typed_train(expression, identifier_node, &parser->general_allocator);
+      left->tag = node_tag_identifier;
+      parse_identifier(&left->data->identifier, parser);
+      break;
+      
+    case token_tag_at:
+      get_token(parser);
+      left = push_typed_train(expression, unary_node, &parser->general_allocator);
+      left->tag = node_tag_reference;
+      left->data->unary.expression = parse_expression(0, parser);
+      break;
+      
+    default:
+      UNIMPLEMENTED();
+      break;
+    }
+  }
+
+  /* handle a possibly chained expression */
+  for (;;)
+  {
+    node_tag right_tag;
+    switch (parser->token.tag)
+    {
+      /* procedure */
+    case token_tag_arrow:
+    case token_tag_left_brace:
+      {
+        expression *procedure = push_typed_train(expression, procedure_node, &parser->general_allocator);
+        procedure->data->procedure.parameters = left;
+        left = procedure;
+        left->tag = node_tag_procedure;
+        parse_procedure(&procedure->data->procedure, parser);
+        break;
+      }
+      
+      /* logical */
+    case token_tag_and2:                 right_tag = node_tag_conjunction;       break;
+    case token_tag_bar2:                 right_tag = node_tag_disjunction;       break;
+    case token_tag_equality2:            right_tag = node_tag_equality;          break;
+    case token_tag_exclamation_equality: right_tag = node_tag_inequality;        break;
+    case token_tag_right_angle:          right_tag = node_tag_greater;           break;
+    case token_tag_left_angle:           right_tag = node_tag_lesser;            break;
+    case token_tag_right_angle_equality: right_tag = node_tag_inclusive_greater; break;
+    case token_tag_left_angle_equality:  right_tag = node_tag_inclusive_lesser;  break;
+      
+      /* arithmetic */
+    case token_tag_plus:     right_tag = node_tag_addition;       break;
+    case token_tag_dash:     right_tag = node_tag_subtraction;    break;
+    case token_tag_asterisk: right_tag = node_tag_multiplication; break;
+    case token_tag_slash:    right_tag = node_tag_division;       break;
+    case token_tag_percent:  right_tag = node_tag_modulo;         break;
+
+      /* bitwise */
+    case token_tag_and:          right_tag = node_tag_bitwise_conjunction;           break;
+    case token_tag_bar:          right_tag = node_tag_bitwise_disjunction;           break;
+    case token_tag_caret:        right_tag = node_tag_bitwise_exclusive_disjunction; break;
+    case token_tag_left_angle2:  right_tag = node_tag_bitwise_left_shift;            break;
+    case token_tag_right_angle2: right_tag = node_tag_bitwise_right_shift;           break;
+
+      /* assignment */
+    case token_tag_equality:              right_tag = node_tag_assignment;                               break;
+    case token_tag_plus_equality:         right_tag = node_tag_addition_assignment;                      break;
+    case token_tag_minus_equality:        right_tag = node_tag_subtraction_assignment;                   break;
+    case token_tag_asterisk_equality:     right_tag = node_tag_multiplication_assignment;                break;
+    case token_tag_slash_equality:        right_tag = node_tag_division_assignment;                      break;
+    case token_tag_percent_equality:      right_tag = node_tag_modulo_assignment;                        break;
+    case token_tag_and_equality:          right_tag = node_tag_bitwise_conjunction_assignment;           break;
+    case token_tag_bar_equality:          right_tag = node_tag_bitwise_disjunction_assignment;           break;
+    case token_tag_caret_equality:        right_tag = node_tag_bitwise_exclusive_disjunction_assignment; break;
+    case token_tag_left_angle2_equality:  right_tag = node_tag_bitwise_left_shift_assignment;            break;
+    case token_tag_right_angle2_equality: right_tag = node_tag_bitwise_right_shift_assignment;           break;
+
+      /* resolution */
+    case token_tag_dot: right_tag = node_tag_resolution; break;
+      
+      /* other */
+    case token_tag_comma:     right_tag = node_tag_list;       break;
+    case token_tag_question:  right_tag = node_tag_condition;  break;
+    case token_tag_semicolon:
+    case token_tag_right_parenthesis:
+      goto finished;
+    default:                  right_tag = node_tag_invocation; break;
+    }
+    
+    if (!left) goto finished;
+
+    /* prevent chained expressions with procedures. */
+    if (left->tag == node_tag_procedure && right_tag != node_tag_invocation) goto finished;
+
+    /* check precedence */
+    precedence right_precedence = precedences[right_tag];
+    if (right_precedence <= left_precedence) goto finished;
+
+    /* skip the operator */
+    if (right_tag != node_tag_invocation) get_token(parser);
+
+    expression *right = right_tag != node_tag_condition
+          ? push_typed_train(expression, binary_node, &parser->general_allocator)
+          : push_typed_train(expression, ternary_node, &parser->general_allocator);
+    right->tag = right_tag;
+    right->data->binary.left = left;
+    if (right_tag != node_tag_condition)
+    {
+      right->data->binary.right = parse_expression(right_precedence, parser);
+    }
+    else /* the expression is ternary */
+    {
+      /* parse the right expression as a parenthesized expression */
+      right->data->ternary.right = parse_expression(0, parser);
+
+      /* parse a possible other expression */
+      if (parser->token.tag == token_tag_colon)
+      {
+        get_token(parser); /* skip `:` */
+        right->data->ternary.other = parse_expression(right_precedence, parser);
+      }
+    }
+    
+    left = right;
+  }
+  
+finished:
+  return left;
+}
+
 void parse(const utf8 *path, program *program, parser *parser)
 {
-  fill_memory(parser, sizeof(*parser), 0);
+  fill(parser, sizeof(*parser), 0);
 
   parser->program = program;
 
@@ -626,7 +720,7 @@ void parse(const utf8 *path, program *program, parser *parser)
     goto done_parsing;
 
   /* parse */
-  parse_structure_scope(&parser->program->global_scope, parser);
+  parse_structure(&parser->program->global_scope, parser);
 
 done_parsing:
 

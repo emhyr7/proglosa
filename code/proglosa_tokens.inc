@@ -56,6 +56,9 @@ XPASTE(right_angle2_equality, 148, "'>>='")
 /* keywords */
 
 /* literals */
-XPASTE(identifier, 150, "identifier")
-XPASTE(number,     151, "number")
-XPASTE(string,     152, "string")
+XPASTE(identifier,  150, "identifier")
+XPASTE(decimal,     151, "decimal")
+XPASTE(digital,     152, "digital")
+XPASTE(hexadecimal, 153, "hexadecimal")
+XPASTE(binary,      154, "binary")
+XPASTE(string,      155, "string")

@@ -240,27 +240,27 @@ inline address align_forwards(address x, uint a)
 
 /*****************************************************************************/
 
-inline void copy_memory(void *destination, const void *source, uint size)
+inline void copy(void *destination, const void *source, uint size)
 {
   CopyMemory(destination, source, size);
 }
 
-inline void fill_memory(void *destination, uint size, byte value)
+inline void fill(void *destination, uint size, byte value)
 {
   FillMemory(destination, size, value);
 }
 
-inline void zero_memory(void *destination, uint size)
+inline void zero(void *destination, uint size)
 {
   ZeroMemory(destination, size);
 }
 
-inline void move_memory(void *destination, const void *source, uint size)
+inline void move(void *destination, const void *source, uint size)
 {
   MoveMemory(destination, source, size);
 }
 
-inline void *allocate_memory(uint size)
+inline void *allocate(uint size)
 {
   void *memory = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   if (!memory)
@@ -271,16 +271,16 @@ inline void *allocate_memory(uint size)
   return memory;
 }
 
-inline void deallocate_memory(void *memory, uint size)
+inline void deallocate(void *memory, uint size)
 {
   VirtualFree(memory, 0, MEM_RELEASE);
 }
 
-inline void *reallocate_memory(uint size, void *old_memory, uint old_size)
+inline void *reallocate(uint size, void *old_memory, uint old_size)
 {
-  void *memory = allocate_memory(size);
-  copy_memory(memory, old_memory, old_size);
-  deallocate_memory(old_memory, old_size);
+  void *memory = allocate(size);
+  copy(memory, old_memory, old_size);
+  deallocate(old_memory, old_size);
   return memory;
 }
 
@@ -308,7 +308,7 @@ void *push(uint size, uint alignment, allocator *allocator)
     if (!allocator->minimum_buffer_size) allocator->minimum_buffer_size = default_allocator_minimum_buffer_size;
     uint buffer_size = get_maximum(size, allocator->minimum_buffer_size);
     uint allocation_size = sizeof(buffer) + buffer_size;
-    buffer *new_buffer = allocator->allocator ? push(allocation_size, alignof(buffer), allocator->allocator) : allocate_memory(allocation_size);
+    buffer *new_buffer = allocator->allocator ? push(allocation_size, alignof(buffer), allocator->allocator) : allocate(allocation_size);
     new_buffer->prior = allocator->active_buffer;
     if (allocator->active_buffer) allocator->active_buffer->next = new_buffer;
     new_buffer->mass = 0;
@@ -322,7 +322,7 @@ void *push(uint size, uint alignment, allocator *allocator)
   allocator->active_buffer->mass += forward_alignment;
   void *memory = allocator->active_buffer->memory + allocator->active_buffer->mass;
   allocator->active_buffer->mass += size;
-  fill_memory(memory, size, 0);
+  fill(memory, size, 0);
   return memory;
 }
 
@@ -342,7 +342,7 @@ void end_scratch(scratch *scratch)
     current_buffer = prior_buffer)
   {
     prior_buffer = current_buffer->prior;
-    if (!scratch->allocator->allocator) deallocate_memory(current_buffer, sizeof(buffer) + current_buffer->size);
+    if (!scratch->allocator->allocator) deallocate(current_buffer, sizeof(buffer) + current_buffer->size);
     else current_buffer->mass = 0;
   }
   ASSERT(current_buffer == scratch->buffer);

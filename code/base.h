@@ -293,19 +293,21 @@ address align_forwards(address x, uint a);
 
 /*****************************************************************************/
 
-void copy_memory(void *destination, const void *source, uint size);
+void copy(void *destination, const void *source, uint size);
 
-void fill_memory(void *destination, uint size, byte value);
+#define copy_typed(type, destination, source, count) copy(destination, source, count * sizeof(type))
 
-void zero_memory(void *destination, uint size);
+void fill(void *destination, uint size, byte value);
 
-void move_memory(void *destination, const void *source, uint size);
+void zero(void *destination, uint size);
 
-void *allocate_memory(uint size);
+void move(void *destination, const void *source, uint size);
 
-void deallocate_memory(void *memory, uint size);
+void *allocate(uint size);
 
-void *reallocate_memory(uint size, void *memory, uint old_size);
+void deallocate(void *memory, uint size);
+
+void *reallocate(uint size, void *memory, uint old_size);
 
 #define kibibyte ((uint)1024)
 #define mebibyte ((uint)kibibyte * kibibyte)
@@ -339,6 +341,7 @@ void *push(uint size, uint alignment, allocator *allocator);
 #define push_type(type, count, allocator) (type *)push(count * sizeof(type), alignof(type), allocator)
 
 #define push_train(type, extra, allocator) (type *)push(sizeof(type) + extra, alignof(type), allocator)
+#define push_typed_train(first_type, second_type, allocator) push_train(first_type, sizeof(second_type), allocator)
 
 typedef struct
 {
