@@ -627,6 +627,9 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       left = push_typed_train(expression, digital_node, &parser->general_allocator);
       parse_number(left, parser);
       break;
+
+    case token_tag_right_parenthesis:
+      goto finished;
       
     default:
       UNIMPLEMENTED();
