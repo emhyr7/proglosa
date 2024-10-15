@@ -249,6 +249,7 @@ repeat:
     }
     else if (on_number(parser))
     {
+      token->tag = token_tag_digital;
       if (on('0', parser))
       {
         peeked_rune = peek(&peeked_increment, parser);
@@ -256,7 +257,7 @@ repeat:
         {
         case 'b': token->tag = token_tag_binary;      break;
         case 'x': token->tag = token_tag_hexadecimal; break;
-        default:  token->tag = token_tag_digital;     break;
+        default: break;
         }
       }
 
@@ -393,7 +394,7 @@ static void parse_declaration(declaration_node      *result, parser *parser);
 static void parse_identifier (identifier_node       *reuslt, parser *parser);
 static void parse_string     (string_node           *result, parser *parser);
 static void parse_rune       (rune_node             *result, parser *parser);
-static void parse_number     (number_node           *result, parser *parser);
+static void parse_number     (expression           *result, parser *parser);
 static void parse_structure  (structure_node        *result, parser *parser);
 static void parse_procedure  (procedure_node        *result, parser *parser);
 
@@ -406,7 +407,15 @@ void parse_declaration(declaration_node *result, parser *parser)
 
   parse_identifier(&result->identifier, parser);
   ensure_get_token(token_tag_colon, parser);
-  result->type_definition = parse_expression(0, parser);
+  switch (parser->token.tag)
+  {
+  case token_tag_colon:
+  case token_tag_equality:
+    break;
+  default:
+    result->type_definition = parse_expression(0, parser);
+    break;
+  }
 
   result->is_constant = 0;
   switch (parser->token.tag)
@@ -456,8 +465,13 @@ void parse_rune(rune_node *result, parser *parser)
   UNIMPLEMENTED();
 }
 
-void parse_number(number_node *result, parser *parser)
+void parse_number(expression *result, parser *parser)
 {
+  ASSERT(parser->token.tag == token_tag_digital
+         || parser->token.tag == token_tag_hexadecimal
+         || parser->token.tag == token_tag_binary
+         || parser->token.tag == token_tag_decimal);
+  
   static thread_local utf8 string[80];
   uint string_size = get_token_size(parser);
   if (string_size >= countof(string))
@@ -470,16 +484,27 @@ void parse_number(number_node *result, parser *parser)
   utf8 *string_ending;
 
   /* FIX: this isn't failure-checked */
+  uintb base;
   switch (parser->token.tag)
   {
-  case token_tag_decimal:     result->float64 = strtod    (string, &string_ending);     break;
-  case token_tag_digital:     result->uint64  = _strtoui64(string, &string_ending, 10); break;
-  case token_tag_hexadecimal: result->uint64  = _strtoui64(string, &string_ending, 16); break;
-  case token_tag_binary:      result->uint64  = _strtoui64(string, &string_ending, 2);  break;
-  default: ASSERT(0); UNREACHABLE();
+  case token_tag_binary:      base = 2;  break;
+  case token_tag_digital:     base = 10; break;
+  case token_tag_hexadecimal: base = 16; break;
+  default:                    base = 0; break;
   }
 
-  get_token(parser);
+  if (base)
+  {
+    result->tag = node_tag_digital;
+    result->data->digital.value = _strtoui64(string, &string_ending, base);
+  }
+  else
+  {
+    result->tag = node_tag_decimal;
+    result->data->decimal.value = strtod(string, &string_ending);
+  }
+
+  get_token(parser); /* skip number */
 }
 
 void parse_structure(structure_node *result, parser *parser)
@@ -579,6 +604,12 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       left = push_typed_train(expression, unary_node, &parser->general_allocator);
       left->tag = node_tag_reference;
       left->data->unary.expression = parse_expression(0, parser);
+      break;
+
+    case token_tag_digital:
+    case token_tag_hexadecimal:
+      left = push_typed_train(expression, digital_node, &parser->general_allocator);
+      parse_number(left, parser);
       break;
       
     default:
