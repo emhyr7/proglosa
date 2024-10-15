@@ -1,5 +1,9 @@
 .vs/
 
+# Executable
 *.exe
 *.ilk
 *.pdb
+
+# RAD Debugger
+*.rdi
