@@ -104,17 +104,20 @@ static bit on(utf32 rune, parser *parser)
 
 static bit on_space(parser *parser)
 {
-  return iswspace(parser->rune);
+  /* TODO: complete this */
+  return (parser->rune >= '\t' && parser->rune <= '\r')
+         || (parser->rune == ' ');
 }
 
 static bit on_letter(parser *parser)
 {
-  return iswalpha(parser->rune);
+  return (parser->rune >= 'A' && parser->rune <= 'Z')
+         || (parser->rune >= 'a' && parser->rune <= 'z');
 }
 
 static bit on_number(parser *parser)
 {
-  return iswdigit(parser->rune);
+  return (parser->rune >= '0' && parser->rune <= '9');
 }
 
 static void load_into_parser(const utf8 *path, parser *parser)
@@ -141,8 +144,7 @@ static token_tag get_token(parser *parser)
   const utf8 *failure_message = 0;
 
   token *token = &parser->token;
-  while (on_space(parser))
-    advance(parser);
+  while (on_space(parser)) advance(parser);
 
 repeat:
   token->beginning = parser->offset;
@@ -356,6 +358,7 @@ static const precedence precedences[] =
 {
   [node_tag_declaration]                              = 16,
 
+  [node_tag_cast]                                     = 15,
   [node_tag_invocation]                               = 15,
   [node_tag_resolution]                               = 15,
 
@@ -394,7 +397,7 @@ static const precedence precedences[] =
   [node_tag_disjunction]                              = 4,
   
   [node_tag_condition]                                = 3,
-  
+
   [node_tag_assignment]                               = 2,
   [node_tag_addition_assignment]                      = 2,
   [node_tag_subtraction_assignment]                   = 2,
@@ -424,10 +427,12 @@ static statement  *parse_statement (                       parser *parser);
 
 void parse_declaration(declaration_node *result, parser *parser)
 {
-  ASSERT(parser->token.tag == token_tag_identifier);
+  /*  */
+  if (parser->token.tag == token_tag_identifier)
+    parse_identifier(&result->identifier, parser);
 
-  parse_identifier(&result->identifier, parser);
   ensure_get_token(token_tag_colon, parser);
+
   switch (parser->token.tag)
   {
   case token_tag_colon:
@@ -519,7 +524,7 @@ void parse_number(expression *result, parser *parser)
   if (base)
   {
     result->tag = node_tag_digital;
-    result->data->digital.value = _strtoui64(string, &string_ending, base);
+    result->data->digital.value = strtoull(string, &string_ending, base);
   }
   else
   {
@@ -594,15 +599,27 @@ void parse_structure(structure_node *result, parser *parser)
 
 void parse_procedure(procedure_node *result, parser *parser)
 {
-  
-  UNIMPLEMENTED();
+  get_token(parser);
+  for (;;)
+  {
+    parse_expression(0, parser);
+    switch (parser->token.tag)
+    {
+    case token_tag_semicolon:
+      get_token(parser);
+      break;
+    case token_tag_right_brace:
+      goto finished;
+    }
+  }
+finished:
+  get_token(parser);
 }
 
 expression *parse_expression(precedence left_precedence, parser *parser)
 {
   /* parse left */
   expression *left = 0;
-
   {
     switch (parser->token.tag)
     {
@@ -615,7 +632,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     case token_tag_left_parenthesis:
       get_token(parser); /* skip `(` */
       left = parse_expression(0, parser);
-      ensure_get_token(token_tag_right_parenthesis, parser);     
+      ensure_get_token(token_tag_right_parenthesis, parser);
       break;
 
     case token_tag_identifier:
@@ -623,7 +640,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       left->tag = node_tag_identifier;
       parse_identifier(&left->data->identifier, parser);
       break;
-      
+
     case token_tag_at:
       get_token(parser); /* skip `@` */
       left = push_typed_train(expression, unary_node, &parser->general_allocator);
@@ -640,9 +657,11 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       break;
 
     case token_tag_right_parenthesis:
+    case token_tag_right_brace:
       goto finished;
-      
+
     default:
+      report_token_comment(parser, "unknklsdf");
       UNIMPLEMENTED();
       break;
     }
@@ -658,22 +677,26 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     case token_tag_arrow:
       {
         get_token(parser); /* skip `->` */
+
         expression *arguments = left;
-        left = parser->token.tag == token_tag_left_brace
-             ? push_typed_train(expression, procedure_node, &parser->general_allocator)
-             : push_typed_train(expression, procedure_type_node, &parser->general_allocator);
+        left = push_typed_train(expression, procedure_node, &parser->general_allocator);
         left->tag = node_tag_procedure_type;
         left->data->procedure_type.arguments = arguments;
         left->data->procedure_type.results = parse_expression(0, parser);
 
         /* procedure type */
-        if (parser->token.tag != token_tag_left_brace) goto finished;
+        if (parser->token.tag != token_tag_left_brace)
+        {
+          /* TODO: deallocate `sizeof(procedure_node) - sizeof(procedure_node_type) bytes` */
+          goto finished;
+        }
 
         /* procedure */
     case token_tag_left_brace:
+        if (left->tag != node_tag_procedure_type) goto finished;
         left->tag = node_tag_procedure;
         parse_procedure(&left->data->procedure, parser);
-        break;
+        goto finished;
       }
       
       /* logical */
@@ -717,6 +740,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     case token_tag_dot: right_tag = node_tag_resolution; break;
       
       /* other */
+    case token_tag_colon:     right_tag = node_tag_cast;       break;
     case token_tag_comma:     right_tag = node_tag_list;       break;
     case token_tag_question:  right_tag = node_tag_condition;  break;
     case token_tag_semicolon:
@@ -724,11 +748,14 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       goto finished;
     default:                  right_tag = node_tag_invocation; break;
     }
-    
+
     if (!left) goto finished;
 
-    /* prevent chained expressions with procedures. */
-    if (left->tag == node_tag_procedure && right_tag != node_tag_invocation) goto finished;
+    if (left->tag == node_tag_procedure && right_tag != node_tag_invocation)
+    {
+      /* prevent chained expressions with procedures */ 
+      goto finished;
+    }
 
     /* check precedence */
     precedence right_precedence = precedences[right_tag];
@@ -738,8 +765,8 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     if (right_tag != node_tag_invocation) get_token(parser);
 
     expression *right = right_tag != node_tag_condition
-          ? push_typed_train(expression, binary_node, &parser->general_allocator)
-          : push_typed_train(expression, ternary_node, &parser->general_allocator);
+                      ? push_typed_train(expression, binary_node, &parser->general_allocator)
+                      : push_typed_train(expression, ternary_node, &parser->general_allocator);
     right->tag = right_tag;
     right->data->binary.left = left;
     if (right_tag != node_tag_condition)
@@ -758,7 +785,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
         right->data->ternary.other = parse_expression(right_precedence, parser);
       }
     }
-    
+
     left = right;
   }
   
@@ -809,7 +836,7 @@ int start(int arguments_count, char *arguments[])
 
   if (arguments_count <= 1)
   {
-    print_failure("A source path wasn't given.");
+    print_failure("A source path wasn't given.\n");
     return -1;
   }
 

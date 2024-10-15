@@ -92,6 +92,7 @@ XPASTE(reference,  UNARY_NODE_BODY)  /* @a  */
 XPASTE(resolution, BINARY_NODE_BODY) /* a.b */
 
 /* other expressions */
+XPASTE(cast,       BINARY_NODE_BODY)  /* a:b       */
 XPASTE(invocation, BINARY_NODE_BODY)  /* a b       */
 XPASTE(list,       BINARY_NODE_BODY)  /* a, b      */
 XPASTE(condition,  TERNARY_NODE_BODY) /* a ? b : c */

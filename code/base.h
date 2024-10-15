@@ -3,10 +3,27 @@
 /* compilation configurations */
 #if defined(_WIN32)
   #define ON_PLATFORM_WIN32 1
+#elif defined(__linux__)
+  #define ON_PLATFORM_LINUX 1
 #endif
 
 #if defined(_DEBUG) || !defined(NDEBUG)
   #define DEBUGGING 1
+#endif
+
+/* platform dependencies */
+#if defined(ON_PLATFORM_WIN32)
+  #include <tchar.h>
+  #include <Windows.h>
+
+  #pragma comment(lib, "User32.lib")
+#elif defined(ON_PLATFORM_LINUX)
+  #define _POSIX_C_SOURCE 199309L
+
+  #include <unistd.h>
+  #include <fcntl.h>
+  #include <sys/stat.h>
+  #include <sys/mman.h>
 #endif
 
 /* C standard dependencies */
@@ -22,21 +39,21 @@
 #include <threads.h>
 #include <uchar.h>
 #include <wchar.h>
-
-/* platform dependencies */
-#if defined(ON_PLATFORM_WIN32)
-  #include <tchar.h>
-  #include <Windows.h>
-
-  #pragma comment(lib, "User32.lib")
-#endif
+#include <ctype.h>
+#include <wctype.h>
+#include <time.h>
 
 /*****************************************************************************/
 
 /* macros */
 #define ASSERT(...)     assert(__VA_ARGS__)
-#define ASSUME(...)     __assume(__VA_ARGS__) 
-#define UNREACHABLE()   ASSUME(0)
+
+#if defined(ON_PLATFORM_WIN32)
+  #define UNREACHABLE() __assume(0)
+#elif defined(ON_PLATFORM_LINUX)
+  #define UNREACHABLE() __builtin_unreachable()
+#endif
+
 #define UNIMPLEMENTED() do { ASSERT(!"unimplemented"); UNREACHABLE(); } while (0);
 
 #if !defined(__FUNCTION__)
@@ -50,7 +67,7 @@
 /* keywords */
 #define alignof(...) _Alignof(__VA_ARGS__)
 #define alignas(...) _Alignas(__VA_ARGS__)
-#define countof(x) (sizeof(x) / sizeof(x[0]))
+#define countof(x)   (sizeof(x) / sizeof(x[0]))
 
 /*****************************************************************************/
 
@@ -371,6 +388,8 @@ extern thread_local context_data context;
 
 #if defined(ON_PLATFORM_WIN32)
 typedef HANDLE handle;
+#elif defined(ON_PLATFORM_LINUX)
+typedef sintl handle;
 #endif
 
 #define maximum_path_size ((uint)max_path)

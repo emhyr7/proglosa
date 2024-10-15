@@ -4,18 +4,26 @@
 
 uintb clz(uintl value)
 {
+#if defined(ON_PLATFORM_WIN32)
   unsigned long index;
   if (!_BitScanReverse64(&index, value))
     return sizeof(value) * byte_width;
   return sizeof(value) * byte_width - index - 1;
+#elif defined(ON_PLATFORM_LINUX)
+  return __builtin_clz(value);
+#endif
 }
 
 uintb ctz(uintl value)
 {
+#if defined(ON_PLATFORM_WIN32)
   unsigned long index;
   if (!_BitScanForward64(&index, value))
     return sizeof(value) * byte_width;
   return index;
+#elif defined(ON_PLATFORM_LINUX)
+  return __builtin_ctz(value);
+#endif
 }
 
 /*
@@ -242,38 +250,46 @@ inline address align_forwards(address x, uint a)
 
 inline void copy(void *destination, const void *source, uint size)
 {
-  CopyMemory(destination, source, size);
+  memcpy(destination, source, size);
 }
 
 inline void fill(void *destination, uint size, byte value)
 {
-  FillMemory(destination, size, value);
+  memset(destination, value, size);
 }
 
 inline void zero(void *destination, uint size)
 {
-  ZeroMemory(destination, size);
+  fill(destination, size, 0);
 }
 
 inline void move(void *destination, const void *source, uint size)
 {
-  MoveMemory(destination, source, size);
+  memmove(destination, source, size);
 }
 
 inline void *allocate(uint size)
 {
+#if defined(ON_PLATFORM_WIN32)
   void *memory = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-  if (!memory)
-  {
-    print_failure("loser !");
-    jump(*context.failure_jump_point, 1);
-  }
+  if (!memory) goto failed;
+#elif defined(ON_PLATFORM_LINUX)
+  void *memory = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (memory == MAP_FAILED) goto failed;
+#endif
   return memory;
+failed:
+  print_failure("loser !");
+  jump(*context.failure_jump_point, 1);
 }
 
 inline void deallocate(void *memory, uint size)
 {
-  VirtualFree(memory, 0, MEM_RELEASE);
+#if defined(ON_PLATFORM_WIN32)
+  (void)VirtualFree(memory, size, MEM_DECOMMIT);
+#elif defined(ON_PLATFORM_LINUX)
+  (void)munmap(memory, size);
+#endif
 }
 
 inline void *reallocate(uint size, void *old_memory, uint old_size)
@@ -365,53 +381,82 @@ static void initialize_context(void)
 
 handle open_file(const char *file_path)
 {
-  HANDLE file_handle = CreateFileA(file_path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-  if (file_handle == INVALID_HANDLE_VALUE)
-  {
-    print_failure("Failed to open file.\n");
-    jump(*context.failure_jump_point, 1);
-  }
-  return (handle)file_handle;
+  handle file_handle;
+#if defined(ON_PLATFORM_WIN32)
+  HANDLE win32_file_handle = CreateFileA(file_path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  if (win32_file_handle == INVALID_HANDLE_VALUE) goto failed;
+  file_handle = win32_file_handle;
+#elif defined(ON_PLATFORM_LINUX)
+  int linux_file_handle = open(file_path, O_RDWR);
+  if (linux_file_handle == -1) goto failed;
+  file_handle = linux_file_handle;
+#endif
+  return file_handle;
+failed:
+  print_failure("Failed to open file.\n");
+  jump(*context.failure_jump_point, 1);
 }
 
 uintl get_file_size(handle file_handle)
 {
+  uintl file_size;
+#if defined(ON_PLATFORM_WIN32)
   LARGE_INTEGER large_integer;
-  if (!GetFileSizeEx(file_handle, &large_integer))
-  {
-    print_failure("Failed to get file size.\n");
-    jump(*context.failure_jump_point, 1);
-  }
-  return large_integer.QuadPart;
+  if (!GetFileSizeEx(file_handle, &large_integer)) goto failed;
+  file_size = large_integer.QuadPart;
+#elif defined(ON_PLATFORM_LINUX)
+  struct stat st;
+  if (fstat(file_handle, &st) == -1) goto failed;
+  file_size = st.st_size;
+#endif
+  return file_size;
+failed:
+  print_failure("Failed to get file size.\n");
+  jump(*context.failure_jump_point, 1);
 }
 
 uint read_from_file(void *buffer, uint buffer_size, handle file_handle)
 {
-  DWORD read_size;
-  if (!ReadFile(file_handle, buffer, buffer_size, &read_size, 0))
-  {
-    print_failure("Failed to read file.\n");
-    jump(*context.failure_jump_point, 1);
-  }
+  uint read_size;
+#if defined(ON_PLATFORM_WIN32)
+  DWORD win32_read_size;
+  if (!ReadFile(file_handle, buffer, buffer_size, &win32_read_size, 0)) goto failed;
+#elif defined(ON_PLATFORM_LINUX)
+  ssize_t linux_read_size = read(file_handle, buffer, buffer_size);
+  if (read_size == -1) goto failed;
+  read_size = linux_read_size; 
+#endif
   return read_size;
+failed:
+  print_failure("Failed to read file.\n");
+  jump(*context.failure_jump_point, 1);
 }
 
 void close_file(handle file_handle)
 {
-  CloseHandle(file_handle);
+  (void)close(file_handle);
 }
 
 /*****************************************************************************/
 
+/* this is initialized at runtime in `initialize_base` */
 uintl clock_frequency;
 
 thread_local uintl clock_beginning_time;
 
 inline uintl get_time(void)
 {
-  LARGE_INTEGER time;
-  QueryPerformanceCounter(&time);
-  return time.QuadPart;
+  uintl time;
+#if defined(ON_PLATFORM_WIN32)
+  LARGE_INTEGER win32_time;
+  QueryPerformanceCounter(&win32_time);
+  time = win32_time.QuadPart;
+#elif defined(ON_PLATFORM_LINUX)
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  time = ts.tv_nsec;
+#endif
+  return time / clock_frequency;
 }
 
 inline void begin_clock(void)
@@ -421,7 +466,7 @@ inline void begin_clock(void)
 
 inline float64 end_clock(void)
 {
-  return (float64)(get_time() - clock_beginning_time) * 1000000 / clock_frequency;
+  return (float64)(get_time() - clock_beginning_time);
 }
 
 /*****************************************************************************/
@@ -429,9 +474,15 @@ inline float64 end_clock(void)
 bit initialize_base(void)
 {
   {
+#if defined(ON_PLATFORM_WIN32)
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);
     clock_frequency = frequency.QuadPart;
+#elif defined(ON_PLATFORM_LINUX)
+    struct timespec ts;
+    clock_getres(CLOCK_REALTIME, &ts);
+    clock_frequency = ts.tv_nsec;
+#endif
   }
 
   if (set_jump_point(context.default_failure_jump_point))
