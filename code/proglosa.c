@@ -259,16 +259,26 @@ repeat:
         case 'x': token->tag = token_tag_hexadecimal; break;
         default: break;
         }
+        advance(parser);
       }
 
       do
       {
-        advance(parser);
         if (on('.', parser))
         {
+          switch (parser->token.tag)
+          {
+          case token_tag_binary:
+          case token_tag_hexadecimal:
+            report_token_failure(parser, "Weird ass number.");
+            jump(*parser->failure_jump_point, 1);
+          default:
+            break;
+          }
           token->tag = token_tag_decimal;
           advance(parser);
         }
+        advance(parser);
       }
       while(on_number(parser) || on('_', parser));
     }
@@ -335,6 +345,8 @@ static utf8 *get_token_pointer(parser *parser)
 typedef uintb precedence;
 static const precedence precedences[] =
 {
+  [node_tag_declaration]                              = 16,
+
   [node_tag_invocation]                               = 15,
   [node_tag_resolution]                               = 15,
 
@@ -394,7 +406,7 @@ static void parse_declaration(declaration_node      *result, parser *parser);
 static void parse_identifier (identifier_node       *reuslt, parser *parser);
 static void parse_string     (string_node           *result, parser *parser);
 static void parse_rune       (rune_node             *result, parser *parser);
-static void parse_number     (expression           *result, parser *parser);
+static void parse_number     (expression            *result, parser *parser);
 static void parse_structure  (structure_node        *result, parser *parser);
 static void parse_procedure  (procedure_node        *result, parser *parser);
 
@@ -413,7 +425,7 @@ void parse_declaration(declaration_node *result, parser *parser)
   case token_tag_equality:
     break;
   default:
-    result->type_definition = parse_expression(0, parser);
+    result->type_definition = parse_expression(precedences[node_tag_declaration], parser);
     break;
   }
 
@@ -483,7 +495,6 @@ void parse_number(expression *result, parser *parser)
   string[string_size] = 0;
   utf8 *string_ending;
 
-  /* FIX: this isn't failure-checked */
   uintb base;
   switch (parser->token.tag)
   {
@@ -493,6 +504,7 @@ void parse_number(expression *result, parser *parser)
   default:                    base = 0; break;
   }
 
+  /* FIX: this isn't failure-checked */
   if (base)
   {
     result->tag = node_tag_digital;
@@ -513,6 +525,8 @@ void parse_structure(structure_node *result, parser *parser)
 
   /* TODO: upon the failure of an iteration, deallocate the allocated memory
            from the iteration, and skip to a valid onset. */
+
+  result->declarations_count = 0;
 
   for (statement *prior_declaration = 0;;)
   {
@@ -606,8 +620,10 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       left->data->unary.expression = parse_expression(0, parser);
       break;
 
+    case token_tag_binary:
     case token_tag_digital:
     case token_tag_hexadecimal:
+    case token_tag_decimal:
       left = push_typed_train(expression, digital_node, &parser->general_allocator);
       parse_number(left, parser);
       break;
