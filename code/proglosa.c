@@ -457,7 +457,8 @@ void parse_identifier(identifier_node *result, parser *parser)
   ASSERT(parser->token.tag == token_tag_identifier);
 
   result->runes_count = get_token_size(parser);
-  result->runes = push_type(utf8, result->runes_count, &parser->general_allocator);
+  result->runes = push_type(utf8, result->runes_count + 1, &parser->general_allocator);
+  result->runes[result->runes_count] = 0;
   copy_typed(utf8, result->runes, get_token_pointer(parser), result->runes_count);
   get_token(parser);
 }
@@ -467,7 +468,8 @@ void parse_string(string_node *result, parser *parser)
   ASSERT(parser->token.tag == token_tag_string);
 
   result->runes_count = get_token_size(parser);
-  result->runes = push_type(utf8, result->runes_count, &parser->general_allocator);
+  result->runes = push_type(utf8, result->runes_count + 1, &parser->general_allocator);
+  result->runes[result->runes_count] = 0;
   copy_typed(utf8, result->runes, get_token_pointer(parser), result->runes_count);
   get_token(parser);
 }
