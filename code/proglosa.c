@@ -544,6 +544,7 @@ void parse_structure(structure_node *result, parser *parser)
 
 void parse_procedure(procedure_node *result, parser *parser)
 {
+  
   UNIMPLEMENTED();
 }
 
@@ -564,7 +565,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     case token_tag_left_parenthesis:
       get_token(parser); /* skip `(` */
       left = parse_expression(0, parser);
-      ensure_get_token(token_tag_right_parenthesis, parser);
+      ensure_get_token(token_tag_right_parenthesis, parser);     
       break;
 
     case token_tag_identifier:
@@ -574,7 +575,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       break;
       
     case token_tag_at:
-      get_token(parser);
+      get_token(parser); /* skip `@` */
       left = push_typed_train(expression, unary_node, &parser->general_allocator);
       left->tag = node_tag_reference;
       left->data->unary.expression = parse_expression(0, parser);
@@ -592,15 +593,25 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     node_tag right_tag;
     switch (parser->token.tag)
     {
-      /* procedure */
+      /* procedure [type] */
     case token_tag_arrow:
-    case token_tag_left_brace:
       {
-        expression *procedure = push_typed_train(expression, procedure_node, &parser->general_allocator);
-        procedure->data->procedure.parameters = left;
-        left = procedure;
+        get_token(parser); /* skip `->` */
+        expression *arguments = left;
+        left = parser->token.tag == token_tag_left_brace
+             ? push_typed_train(expression, procedure_node, &parser->general_allocator)
+             : push_typed_train(expression, procedure_type_node, &parser->general_allocator);
+        left->tag = node_tag_procedure_type;
+        left->data->procedure_type.arguments = arguments;
+        left->data->procedure_type.results = parse_expression(0, parser);
+
+        /* procedure type */
+        if (parser->token.tag != token_tag_left_brace) goto finished;
+
+        /* procedure */
+    case token_tag_left_brace:
         left->tag = node_tag_procedure;
-        parse_procedure(&procedure->data->procedure, parser);
+        parse_procedure(&left->data->procedure, parser);
         break;
       }
       

@@ -3,10 +3,13 @@
 XPASTE(undefined, {})
 
 /* literals */
-XPASTE(identifier, { utf8   *runes; uint runes_count; })
-XPASTE(string,     { utf8   *runes; uint runes_count; })
-XPASTE(rune,       { utf32   value; })
-XPASTE(number,     { union { uint64  uint64; float64 float64; }; })
+XPASTE(identifier,     { utf8   *runes; uint runes_count; })
+XPASTE(string,         { utf8   *runes; uint runes_count; })
+XPASTE(rune,           { utf32   value; })
+XPASTE(number,         { union { uint64  uint64; float64 float64; }; })
+
+#define PROCEDURE_TYPE_NODE_BODY { expression *arguments; expression *results; }
+XPASTE(procedure_type, PROCEDURE_TYPE_NODE_BODY)
 
 XPASTE(declaration,
 {
@@ -25,11 +28,13 @@ XPASTE(structure,
 
 XPASTE(procedure,
 {
-  expression    *parameters;
+  struct PROCEDURE_TYPE_NODE_BODY;
   structure_node structure;
   statement     *statements;
   uint           statements_count;
 })
+
+#undef PROCEDURE_TYPE_NODE_BODY
 
 /* expressions */
 #define UNARY_NODE_BODY   { expression *expression; }
