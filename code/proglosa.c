@@ -39,6 +39,8 @@ void v_report(reporting_type type, const utf8 *source, const utf8 *path, uint be
 
   while (*caret != '\n' && *caret != '\0') fputc(*caret++, stderr);
   fputc('\n', stderr);
+
+  fflush(stderr);
 }
 
 /*****************************************************************************/
@@ -136,6 +138,8 @@ static void load_into_parser(const utf8 *path, parser *parser)
 
 static token_tag get_token(parser *parser)
 {
+  const utf8 *failure_message = 0;
+
   token *token = &parser->token;
   while (on_space(parser))
     advance(parser);
@@ -270,8 +274,8 @@ repeat:
           {
           case token_tag_binary:
           case token_tag_hexadecimal:
-            report_token_failure(parser, "Weird ass number.");
-            jump(*parser->failure_jump_point, 1);
+            failure_message = "Weird ass number.";
+            goto failed;
           default:
             break;
           }
@@ -280,23 +284,28 @@ repeat:
         }
         advance(parser);
       }
-      while(on_number(parser) || on('_', parser));
+      while(on_number(parser) || on('_', parser) || on('.', parser));
     }
     else
     {
       token->tag = token_tag_unknown;
       advance(parser);
+      failure_message = "Unknown token.";
+      goto failed_no_skip;
     }
     break;
   }
 
   token->ending = parser->offset;
-  if (token->tag == token_tag_unknown)
-  {
-      report_token_failure(parser, "Unknown token.");
-      jump(*parser->failure_jump_point, 1);
-  }
   return token->tag;
+
+failed:
+  while (!on_space(parser)) advance(parser);
+
+failed_no_skip:
+  token->ending = parser->offset;
+  report_token_failure(parser, failure_message);
+  jump(*parser->failure_jump_point, 1);
 }
 
 static void ensure_token(token_tag tag, parser *parser)
