@@ -11,7 +11,16 @@ const utf8 reporting_type_representation[][8] =
   [reporting_type_failure] = "failure",
 };
 
-void v_report(reporting_type type, const utf8 *source, const utf8 *path, uint beginning, uint ending, uint row, uint column, const utf8 *message, vargs vargs)
+void v_report(
+  reporting_type type,
+  const utf8    *source,
+  const utf8    *path,
+  uint           beginning,
+  uint           ending,
+  uint           row,
+  uint           column,
+  const utf8    *message,
+  vargs          vargs)
 {
   const utf8 *type_representation = reporting_type_representation[type];
   fprintf(stderr, "%s(%u, %u): %s: ", path, row, column, type_representation);
@@ -92,7 +101,6 @@ static utf32 advance(parser *parser)
   parser->column++;
   parser->rune      = rune;
   parser->increment = increment;
-  if (parser->rune == (utf32)token_tag_etx) jump(parser->etx_jump_point, 1);
   return rune;
 }
 
@@ -154,12 +162,14 @@ repeat:
   utf32 peeked_rune;
   switch (parser->rune)
   {
+  case token_tag_etx:
+    parser->token.tag = token_tag_etx;
+    break;
   case '"':
     for(;;)
     { 
       advance(parser);           
-      if (parser->rune == '"')
-        break;
+      if (parser->rune == '"') break;
       if (parser->rune == '\\')
       {
         switch(advance(parser))
@@ -395,7 +405,7 @@ static const precedence precedences[] =
   [node_tag_disjunction]                              = 5,
   
   [node_tag_condition]                                = 4,
-  [node_tag_lambda]                                   = 4,
+  [node_tag_procedure]                                = 4,
 
   [node_tag_assignment]                               = 3,
   [node_tag_addition_assignment]                      = 3,
@@ -507,7 +517,6 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       left = push_typed_train(expression, scope_node, &parser->general_allocator);
       left->tag = node_tag_scope;
       parse_scope(&left->data->scope, parser);
-      ensure_get_token(token_tag_right_brace, parser);
       break;
 
     default:
@@ -530,6 +539,9 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     case token_tag_semicolon:
     case token_tag_right_parenthesis:
     case token_tag_right_bracket:
+    case token_tag_right_brace:
+    case token_tag_left_brace:
+    case token_tag_etx:
       goto finished;
 
       /* logical */
@@ -573,7 +585,7 @@ expression *parse_expression(precedence left_precedence, parser *parser)
     default:                  right_tag = node_tag_invocation;  break;
     case token_tag_dot:       right_tag = node_tag_resolution;  break;
     case token_tag_comma:     right_tag = node_tag_list;        break;
-    case token_tag_arrow:     right_tag = node_tag_lambda;      break;
+    case token_tag_arrow:     right_tag = node_tag_procedure;   goto ternary;
     case token_tag_colon:     right_tag = node_tag_declaration; goto ternary;
     case token_tag_question:  right_tag = node_tag_condition;   goto ternary;
     ternary:
@@ -602,12 +614,18 @@ expression *parse_expression(precedence left_precedence, parser *parser)
       /* parse a possible other expression */
       switch (parser->token.tag)
       {
+      case token_tag_left_brace:
+        right->data->ternary.expression = push_typed_train(expression, scope_node, &parser->general_allocator);
+        right->data->ternary.expression->tag = node_tag_scope;
+        parse_scope(&right->data->ternary.expression->data->scope, parser);
+        break;
       case token_tag_colon:
       case token_tag_equality:
         get_token(parser); /* skip onset */
         right->data->ternary.expression = parse_expression(precedences[node_tag_declaration], parser);
         break;
       default:
+        /* the third expression is omittable for every ternary expression */
         break;
       }
     }
@@ -694,6 +712,8 @@ void parse_scope(scope_node *result, parser *parser)
 
   allocator buffer = {&parser->general_allocator};
 
+  bit is_global = result == &parser->program->global_scope;
+
   get_token(parser); /* get the first onset */
   for (;;)
   {
@@ -705,11 +725,19 @@ void parse_scope(scope_node *result, parser *parser)
     case token_tag_semicolon:
       get_token(parser);
       break;
+    case token_tag_etx:
+      if (!is_global)
+      {
+        report_token_failure(parser, "Unterminated %s.", token_tag_representations[token_tag_left_brace]);
+        goto failed;
+      }
+      else goto finished;
+      break;
     case token_tag_right_brace:
       /* since the global scope doesn't require braces, ill-expect `}` */
-      if (result == &parser->program->global_scope)
+      if (is_global)
       {
-        report_token_failure(parser, "Encountered extraneous %s.", token_tag_representations[parser->token.tag]);
+        report_token_failure(parser, "Encountered extraneous %s.", token_tag_representations[token_tag_right_brace]);
         goto failed;
       }
       else goto finished;
@@ -720,6 +748,8 @@ void parse_scope(scope_node *result, parser *parser)
   }
 
 finished:
+  get_token(parser); /* skip `}`, or ignore `token_tag_etx` */
+
   return;
 
 failed:
@@ -746,10 +776,6 @@ void parse(const utf8 *path, program *program, parser *parser)
 
   /* load the source */
   load_into_parser(path, parser);
-
-  /* initialize closure */
-  if (set_jump_point(parser->etx_jump_point))
-    goto done_parsing;
 
   /* parse */
   parse_scope(&parser->program->global_scope, parser);
