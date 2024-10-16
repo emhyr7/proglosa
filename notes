@@ -1,4 +1,9 @@
-.---- SYNTAX DESCRIPTION -------------------------------------------------------
+
+1) parse everything as an expression.
+2) verify expression usage under scope.
+3) verify expression usage by type.
+
+---- SYNTAX DESCRIPTION --------------------------------------------------------
 
 declaration
 	: identifier ':' [type-definition] [assignment]
@@ -40,7 +45,7 @@ procedure
 	: '(' declaration {',' declaration} ')' ['->' declaration {',' declaration}] procedure-scope
 	;
 
--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 /* neither a constant nor variable; a type */
 Color: {r: F32, g: F32, b: F32, a: F32} : {0, 0, 0, 0};
@@ -62,7 +67,7 @@ make_color: (F32, F32, F32, F32) -> Color : (r: F32, g: F32, b: F32, a: F32) -> 
     };
 }({0, 0, 0, 0});
 
----- [ 1.10.2024 ] ------------------------------------------------------------
+---- [ 1.10.2024 ] -------------------------------------------------------------
 
 * [x] exception-style error handling
 	- use `<setjmp.h>`

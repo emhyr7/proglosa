@@ -33,9 +33,9 @@ inline void report(reporting_type type, const utf8 *source, const utf8 *path, ui
 
 typedef enum
 {
-    #define XPASTE(identifier, value, representation) token_tag_##identifier = value,
-      #include "proglosa_tokens.inc"
-    #undef XPASTE
+#define X(identifier, value, representation) token_tag_##identifier = value,
+  #include "proglosa_tokens.inc"
+#undef X
 } token_tag;
 
 extern const utf8 token_tag_representations[][16];
@@ -63,40 +63,32 @@ void report_token(reporting_type type, parser *parser, const utf8 *message, ...)
 
 typedef enum
 {
-#define XPASTE(identifier, body) node_tag_##identifier,
+#define X(identifier, body) node_tag_##identifier,
   #include "proglosa_nodes.inc"
-#undef XPASTE
+#undef X
 } node_tag;
 
 extern const utf8 *node_tag_representations[];
 
 typedef struct expression expression;
-typedef struct statement  statement;
 
-#define XPASTE(identifier, body) typedef struct identifier##_node identifier##_node;
+#define X(identifier, body) typedef struct identifier##_node identifier##_node;
   #include "proglosa_nodes.inc"
-#undef XPASTE
+#undef X
 
-#define XPASTE(identifier, body) struct identifier##_node body;
+#define X(identifier, body) struct identifier##_node body;
   #include "proglosa_nodes.inc"
-#undef XPASTE
+#undef X
 
 struct expression
 {
   node_tag tag;
   union
   {
-#define XPASTE(identifier, body) identifier##_node identifier;
+#define X(identifier, body) identifier##_node identifier;
   #include "proglosa_nodes.inc"
-#undef XPASTE
+#undef X
   } data[];
-};
-
-struct statement
-{
-  statement *prior;
-  statement *next;
-  expression expression;
 };
 
 #define identifier_allocator_chunk_size (8)
@@ -104,7 +96,7 @@ struct statement
 
 typedef struct
 {
-  structure_node global_scope;
+  scope_node global_scope;
 } program;
 
 /*****************************************************************************/
@@ -129,9 +121,9 @@ struct parser
   jump_point  etx_jump_point;
   jump_point *failure_jump_point;
   
-  token           token;
-  program        *program;
-  structure_node *current_scope;
+  token       token;
+  program    *program;
+  scope_node *current_scope;
 };
 
 void parse(const utf8 *path, program *program, parser *parser);

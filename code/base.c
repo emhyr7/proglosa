@@ -232,17 +232,20 @@ byte encode_utf8(utf8 string[4], utf32 rune)
 
 inline uint get_backward_alignment(address x, uint a)
 {
+  ASSERT(a % 2 == 0);
   return a ? x & (a - 1) : 0;
 }
 
 inline uint get_forward_alignment(address x, uint a)
 {
+  ASSERT(a % 2 == 0);
   uint m = get_backward_alignment(x, a);
   return m ? a - m : 0;
 }
 
 inline address align_forwards(address x, uint a)
 {
+  ASSERT(a % 2 == 0);
   return x + get_forward_alignment(x, a);
 }
 
@@ -434,7 +437,11 @@ failed:
 
 void close_file(handle file_handle)
 {
+#if defined(ON_PLATFORM_WIN32)
+  CloseHandle(file_handle);
+#elif defined(ON_PLATFORM_LINUX)
   (void)close(file_handle);
+#endif
 }
 
 /*****************************************************************************/

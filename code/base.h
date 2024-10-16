@@ -316,9 +316,15 @@ void copy(void *destination, const void *source, uint size);
 
 void fill(void *destination, uint size, byte value);
 
+#define fill_typed(type, destination, value) fill(destination, sizeof(type), value)
+
 void zero(void *destination, uint size);
 
+#define zero_typed(type, destination) zero(destination, sizeof(type))
+
 void move(void *destination, const void *source, uint size);
+
+#define move_typed(type, destination, source) move(destination, source, sizeof(type))
 
 void *allocate(uint size);
 
@@ -355,7 +361,7 @@ struct allocator
 
 void *push(uint size, uint alignment, allocator *allocator);
 
-#define push_type(type, count, allocator) (type *)push(count * sizeof(type), alignof(type), allocator)
+#define push_typed(type, count, allocator) (type *)push(count * sizeof(type), alignof(type), allocator)
 
 #define push_train(type, extra, allocator) (type *)push(sizeof(type) + extra, alignof(type), allocator)
 #define push_typed_train(first_type, second_type, allocator) push_train(first_type, sizeof(second_type), allocator)

@@ -1,102 +1,85 @@
-/* (identifier, body) */
+// (identifier, body)
 
-XPASTE(undefined, {})
+X(undefined, {})
 
-/* literals */
-XPASTE(identifier,     { utf8   *runes; uint runes_count; })
-XPASTE(string,         { utf8   *runes; uint runes_count; })
-XPASTE(rune,           { utf32   value; })
-XPASTE(digital,        { uint64  value; })
-XPASTE(decimal,        { float64 value; })
-
-#define PROCEDURE_TYPE_NODE_BODY { expression *arguments; expression *results; }
-XPASTE(procedure_type, PROCEDURE_TYPE_NODE_BODY)
-
-XPASTE(declaration,
-{
-  identifier_node identifier;
-  expression *type_definition;
-  expression *assignment;
-  bit is_constant : 1;
-})
-
-/* scoped literals */
-XPASTE(structure,
-{
-  statement *declarations;
-  uint       declarations_count;
-})
-
-XPASTE(procedure,
-{
-  struct PROCEDURE_TYPE_NODE_BODY;
-  structure_node structure;
-  statement     *statements;
-  uint           statements_count;
-})
-
-#undef PROCEDURE_TYPE_NODE_BODY
-
-/* expressions */
+// expressions
 #define UNARY_NODE_BODY   { expression *expression; }
 #define BINARY_NODE_BODY  { expression *left; expression *right; }
-#define TERNARY_NODE_BODY { struct BINARY_NODE_BODY; expression *other; }
+#define TERNARY_NODE_BODY { struct BINARY_NODE_BODY; struct UNARY_NODE_BODY; }
 
-XPASTE(unary,   UNARY_NODE_BODY)   /* +a        */
-XPASTE(binary,  BINARY_NODE_BODY)  /* a + b     */
-XPASTE(ternary, TERNARY_NODE_BODY) /* a ? b : c */
+X(unary,   UNARY_NODE_BODY)
+X(binary,  BINARY_NODE_BODY)
+X(ternary, TERNARY_NODE_BODY)
 
-/* logical expressions */
-XPASTE(negation,          UNARY_NODE_BODY)  /* !a     */
-XPASTE(conjunction,       BINARY_NODE_BODY) /* a && b */
-XPASTE(disjunction,       BINARY_NODE_BODY) /* a || b */
-XPASTE(equality,          BINARY_NODE_BODY) /* a == b */
-XPASTE(inequality,        BINARY_NODE_BODY) /* a != b */
-XPASTE(greater,           BINARY_NODE_BODY) /* a >  b */
-XPASTE(lesser,            BINARY_NODE_BODY) /* a <  b */
-XPASTE(inclusive_greater, BINARY_NODE_BODY) /* a >= b */
-XPASTE(inclusive_lesser,  BINARY_NODE_BODY) /* a <= b */
+// scoped expressions
+X(subexpression, UNARY_NODE_BODY) // `(` x `)`
+X(indexation,    UNARY_NODE_BODY) // `[` x `]`
 
-/* arithmetic expressions */
-XPASTE(positive,       UNARY_NODE_BODY)  /* +a    */
-XPASTE(negative,       UNARY_NODE_BODY)  /* -a    */
-XPASTE(addition,       BINARY_NODE_BODY) /* a + b */
-XPASTE(subtraction,    BINARY_NODE_BODY) /* a - b */
-XPASTE(multiplication, BINARY_NODE_BODY) /* a * b */
-XPASTE(division,       BINARY_NODE_BODY) /* a / b */
-XPASTE(modulo,         BINARY_NODE_BODY) /* a % b */
+// logical expressions
+X(logical_negation,  UNARY_NODE_BODY)  // `!` x   
+X(conjunction,       BINARY_NODE_BODY) // x `&&` x
+X(disjunction,       BINARY_NODE_BODY) // x `||` x
+X(equality,          BINARY_NODE_BODY) // x `==` x
+X(inequality,        BINARY_NODE_BODY) // x `!=` x
+X(inclusive_greater, BINARY_NODE_BODY) // x `>=` x
+X(inclusive_lesser,  BINARY_NODE_BODY) // x `<=` x
+X(greater,           BINARY_NODE_BODY) // x `>` x 
+X(lesser,            BINARY_NODE_BODY) // x `<` x 
 
-/* bitwise expressions */
-XPASTE(bitwise_negation,              UNARY_NODE_BODY)  /* ~a     */
-XPASTE(bitwise_conjunction,           BINARY_NODE_BODY) /* a &  b */
-XPASTE(bitwise_disjunction,           BINARY_NODE_BODY) /* a |  b */
-XPASTE(bitwise_exclusive_disjunction, BINARY_NODE_BODY) /* a %  b */
-XPASTE(bitwise_left_shift,            BINARY_NODE_BODY) /* a << b */
-XPASTE(bitwise_right_shift,           BINARY_NODE_BODY) /* a >> b */
+// arithmetic expressions
+X(negation,          UNARY_NODE_BODY)  // `-` x  
+X(addition,          BINARY_NODE_BODY) // x `+` x
+X(subtraction,       BINARY_NODE_BODY) // x `-` x
+X(multiplication,    BINARY_NODE_BODY) // x `*` x
+X(division,          BINARY_NODE_BODY) // x `/` x
+X(modulo,            BINARY_NODE_BODY) // x `%` x
 
-/* assignment expressions */
-XPASTE(assignment,                               BINARY_NODE_BODY) /* a   = b */
-XPASTE(addition_assignment,                      BINARY_NODE_BODY) /* a  += b */
-XPASTE(subtraction_assignment,                   BINARY_NODE_BODY) /* a  -= b */
-XPASTE(multiplication_assignment,                BINARY_NODE_BODY) /* a  *= b */
-XPASTE(division_assignment,                      BINARY_NODE_BODY) /* a  /= b */
-XPASTE(modulo_assignment,                        BINARY_NODE_BODY) /* a  %= b */
-XPASTE(bitwise_conjunction_assignment,           BINARY_NODE_BODY) /* a  &= b */
-XPASTE(bitwise_disjunction_assignment,           BINARY_NODE_BODY) /* a  |= b */
-XPASTE(bitwise_exclusive_disjunction_assignment, BINARY_NODE_BODY) /* a  %= b */
-XPASTE(bitwise_left_shift_assignment,            BINARY_NODE_BODY) /* a <<= b */
-XPASTE(bitwise_right_shift_assignment,           BINARY_NODE_BODY) /* a >>= b */
+// bitwise expressions
+X(bitwise_negation,              UNARY_NODE_BODY)  // `~` x   
+X(bitwise_conjunction,           BINARY_NODE_BODY) // x `&` x 
+X(bitwise_disjunction,           BINARY_NODE_BODY) // x `|` x 
+X(bitwise_exclusive_disjunction, BINARY_NODE_BODY) // x `^` x 
+X(bitwise_left_shift,            BINARY_NODE_BODY) // x `<<` x
+X(bitwise_right_shift,           BINARY_NODE_BODY) // x `>>` x
 
-/* resolution expressions */
-XPASTE(reference,  UNARY_NODE_BODY)  /* @a  */
-XPASTE(resolution, BINARY_NODE_BODY) /* a.b */
+// assignment expressions
+X(assignment,                               BINARY_NODE_BODY) // x `=` x  
+X(constant_assignment,                      BINARY_NODE_BODY) // x `:` x  
+X(addition_assignment,                      BINARY_NODE_BODY) // x `+=` x 
+X(subtraction_assignment,                   BINARY_NODE_BODY) // x `-=` x 
+X(multiplication_assignment,                BINARY_NODE_BODY) // x `*=` x 
+X(division_assignment,                      BINARY_NODE_BODY) // x `/=` x 
+X(modulo_assignment,                        BINARY_NODE_BODY) // x `%=` x 
+X(bitwise_conjunction_assignment,           BINARY_NODE_BODY) // x `&=` x 
+X(bitwise_disjunction_assignment,           BINARY_NODE_BODY) // x `|=` x 
+X(bitwise_exclusive_disjunction_assignment, BINARY_NODE_BODY) // x `^=` x 
+X(bitwise_left_shift_assignment,            BINARY_NODE_BODY) // x `<<=` x
+X(bitwise_right_shift_assignment,           BINARY_NODE_BODY) // x `>>=` x
 
-/* other expressions */
-XPASTE(cast,       BINARY_NODE_BODY)  /* a:b       */
-XPASTE(invocation, BINARY_NODE_BODY)  /* a b       */
-XPASTE(list,       BINARY_NODE_BODY)  /* a, b      */
-XPASTE(condition,  TERNARY_NODE_BODY) /* a ? b : c */
+// other expressions
+X(reference,   UNARY_NODE_BODY)   // `@` x  
+X(invocation,  BINARY_NODE_BODY)  // x x               
+X(resolution,  BINARY_NODE_BODY)  // x `.` x
+X(list,        BINARY_NODE_BODY)  // x `,` x           
+X(lambda,      BINARY_NODE_BODY)  // x `->` x
+X(declaration, TERNARY_NODE_BODY) // x `:` x [(':'|'=') x]
+X(condition,   TERNARY_NODE_BODY) // x `?` x [`:` x]
 
 #undef TERNARY_NODE_BODY
 #undef BINARY_NODE_BODY
 #undef UNARY_NODE_BODY
+
+// literals
+X(identifier, { utf8   *runes; uint runes_count; }) // "[`_`|letter]+ [`_`|letter|digit]"
+X(string,     { utf8   *runes; uint runes_count; })
+X(rune,       { utf32   value; })
+X(digital,    { uint64  value; })
+X(decimal,    { float64 value; })
+
+// `{` [x|lambda] {x [';']} `}`
+X(scope,
+{
+  lambda_node  *lambda;
+  expression  **expressions;
+  uint          expressions_count;
+})
